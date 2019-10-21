@@ -1,1 +1,7 @@
 *.wav
+venv
+.venv
+.idea
+build/
+dist/
+lp_capture.egg-info/
