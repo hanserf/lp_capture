@@ -8,7 +8,8 @@ import numpy  # Make sure NumPy is loaded before it is used in the callback
 assert numpy  # avoid "imported but unused" message (W0611)
 import app.usb_collector as process_class
 import app.config as config
-import queue
+import zmq
+import numpy
 
 def int_or_str(text):
     """Helper function for argument parsing."""
@@ -52,14 +53,33 @@ def main():
     args = parser.parse_args(remaining)
     #Start sampling process from input arguments
     q = queue.Queue()
-    recording_process= process_class.USBCollector(queue=q,packet_size=config.packet_size, parser=parser, args=args, rec_folder=default_savedir )
-    recording_process.daemon = True
-    recording_process.start()
+    #recording_process= process_class.USBCollector(queue=q,packet_size=config.packet_size, parser=parser, args=args, rec_folder=default_savedir )
+    #recording_process.daemon = True
+    #recording_process.start()
     print("Recording Process started")
-    while True:
-        print("service started")
-        time.sleep(1)
-    #TODO start zmq subscribe socket:
+    #-------------------------------------------------------------------------------------------------------------------
+    #   Create ZMQ Subscriber Context
+    # -------------------------------------------------------------------------------------------------------------------
+    connect_to = 'tcp://127.0.0.1:5000'
+    array_count = 10
+    ctx = zmq.Context()
+    s = ctx.socket(zmq.SUB)
+    s.connect(connect_to)
+    print("   Done.")
+    s.setsockopt(zmq.SUBSCRIBE, b'')
+    for i in range(array_count):
+        a = s.recv_pyobj()
+        
+    print("   Done.")
+    parser.exit(0)
+
+#    while True:
+#       print("service started")
+#      time.sleep(1)
+
+
+
+
 
 
 

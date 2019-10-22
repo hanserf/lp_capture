@@ -73,7 +73,6 @@ class USBCollector(multiprocessing.Process):
         else:
             print("Recording folder exists")
 
-
     def make_folder(self):
         # Make folder for Interesting images
         try:
