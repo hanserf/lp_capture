@@ -23,7 +23,6 @@ def int_or_str(text):
 #TODO Equalizer and gain control.
 
 def main():
-    # root_dir=os.path.dirname(__file__)
     root_dir = os.path.dirname(__file__)
     default_savedir = os.path.join(root_dir, config.default_save_dir)
     parser = argparse.ArgumentParser(add_help=False)
@@ -53,7 +52,9 @@ def main():
     args = parser.parse_args(remaining)
     #Start sampling process from input arguments
     q = queue.Queue()
-    process_class.USBCollector(q,config.packet_size, parser, args )
+    recording_process= process_class.USBCollector(queue=q,packet_size=config.packet_size, parser=parser, args=args, rec_folder=default_savedir )
+    recording_process.daemon = True
+    recording_process.start()
     print("Recording Process started")
     while True:
         print("service started")
