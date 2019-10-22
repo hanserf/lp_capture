@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='lp_capture',
-    version='0.4.1',
+    version='0.4.9',
     description='For capturing LP and other analog audio',
     author='S3RF',
     author_email='hanse.fjeld@gmail.com',
@@ -11,12 +11,9 @@ setup(
     setup_requires=['wheel'],
     install_requires=['scipy', 'numpy', 'matplotlib','sounddevice','pysoundfile', 'pyzmq'],
     include_package_data=True,
-    package_data={
-        'app.static': ['*']
-    },
     entry_points={
         'console_scripts': [
-            'lp_capture=app.main:main'
+            'lp_capture=app.app.main:main'
         ],
     }
 )
