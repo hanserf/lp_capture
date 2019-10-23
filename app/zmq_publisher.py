@@ -44,7 +44,7 @@ def main():
 
     print ("Sending arrays...")
     for i in range(array_count):
-        a = numpy.random.rand(array_size, array_size)
+        a = numpy.random.rand(array_size)
         s.send_pyobj(a)
     print ("   Done.")
 

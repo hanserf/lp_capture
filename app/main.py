@@ -3,13 +3,15 @@ import argparse
 import queue
 import sys
 import time
+from PyQt5 import QtWidgets, uic
 import sounddevice as sd
 import numpy  # Make sure NumPy is loaded before it is used in the callback
 assert numpy  # avoid "imported but unused" message (W0611)
 import app.usb_collector as process_class
 import app.config as config
+import app.qtgui_functions as qt_functions
 import zmq
-import numpy
+
 
 def int_or_str(text):
     """Helper function for argument parsing."""
@@ -67,15 +69,38 @@ def main():
     s.connect(connect_to)
     print("   Done.")
     s.setsockopt(zmq.SUBSCRIBE, b'')
+    data_list = []
     for i in range(array_count):
-        a = s.recv_pyobj()
+        data_list.append(s.recv_pyobj())
+    data_2Dnumpy = numpy.asarray(data_list)
+    data = flatten1D(data_2Dnumpy)
+    # -------------------------------------------------------------------------------------------------------------------
+    #   Create QTGui for inspecting recording
+    # -------------------------------------------------------------------------------------------------------------------
+
+    app = QtWidgets.QApplication([])
+    gui = qt_functions.QTGuiFunctions(config=config)
+    t_stop = len(data)/config.sample_rate
+    gui.set_plottime(0,t_stop,len(data))
+    print("Number of time points : %i " % len(gui.get_plottime()))
+    gui.set_data(data)
+    gui.graphWidget.setTitle("ZMQ Test")
+    gui.update_plot()
+    gui.show()
+    sys.exit(app.exec_())
 
     print("   Done.")
+    #    while True:
+    #       print("service started")
+    #      time.sleep(1)
+
     parser.exit(0)
 
-#    while True:
-#       print("service started")
-#      time.sleep(1)
+
+def flatten1D(array_2d):
+    N_dim,M_dim = array_2d.shape
+    O_dim = N_dim * M_dim
+    return array_2d.reshape(O_dim)
 
 
 
