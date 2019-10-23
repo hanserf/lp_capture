@@ -69,7 +69,7 @@ def main():
     s.setsockopt(zmq.SUBSCRIBE, b'')
     for i in range(array_count):
         a = s.recv_pyobj()
-        
+
     print("   Done.")
     parser.exit(0)
 
