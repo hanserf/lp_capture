@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='lp_capture',
-    version='0.5.3',
+    version='0.5.4',
     description='For capturing LP and other analog audio',
     author='S3RF',
     author_email='hanse.fjeld@gmail.com',

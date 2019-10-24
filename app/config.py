@@ -7,7 +7,8 @@ from datetime import datetime
 #################################################
 #Remote Control
 #################################################
-zmq_port = 5555
+
+zmq_setup = 'tcp://127.0.0.1:5000'
 ip_addr_local='127.0.0.1'
 default_save_dir = 'raw_recording'
 starttime = datetime.now()

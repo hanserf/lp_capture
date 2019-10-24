@@ -10,7 +10,6 @@ assert numpy  # avoid "imported but unused" message (W0611)
 import app.usb_collector as process_class
 import app.config as config
 import app.qtgui_functions as qt_functions
-import zmq
 
 
 def int_or_str(text):
@@ -62,18 +61,7 @@ def main():
     #-------------------------------------------------------------------------------------------------------------------
     #   Create ZMQ Subscriber Context
     # -------------------------------------------------------------------------------------------------------------------
-    connect_to = 'tcp://127.0.0.1:5000'
-    array_count = 10
-    ctx = zmq.Context()
-    s = ctx.socket(zmq.SUB)
-    s.connect(connect_to)
-    print("   Done.")
-    s.setsockopt(zmq.SUBSCRIBE, b'')
-    data_list = []
-    for i in range(array_count):
-        data_list.append(s.recv_pyobj())
-    data_2Dnumpy = numpy.asarray(data_list)
-    data = flatten1D(data_2Dnumpy)
+
     # -------------------------------------------------------------------------------------------------------------------
     #   Create QTGui for inspecting recording
     # -------------------------------------------------------------------------------------------------------------------
@@ -97,10 +85,7 @@ def main():
     parser.exit(0)
 
 
-def flatten1D(array_2d):
-    N_dim,M_dim = array_2d.shape
-    O_dim = N_dim * M_dim
-    return array_2d.reshape(O_dim)
+
 
 
 

@@ -7,6 +7,7 @@ import os
 import datetime as dt
 import app.config as config
 from collections import deque
+import zmq
 
 class QTGuiFunctions(QtWidgets.QMainWindow):
 
@@ -26,11 +27,12 @@ class QTGuiFunctions(QtWidgets.QMainWindow):
         self.graphWidget.plot(self.t_plot,self.data)
     # -------------------------------------------------------------------------------------------------------------------
     #   ZMQ context for gui data subscription
-    # -------------------------------------------------------------------------------------------------------------------
-
-    #-------------------------------------------------------------------------------------------------------------------
+        self.zmq_sub_context = 0
+        # -------------------------------------------------------------------------------------------------------------------
+        #   ZMQ context for gui data subscription
+        self.zmq_queue = 0;
+        #-------------------------------------------------------------------------------------------------------------------
     #    Timer functions for real time updates
-    # -------------------------------------------------------------------------------------------------------------------
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(self.duration*1000)  # in milliseconds
         self.timer.start()
@@ -38,6 +40,26 @@ class QTGuiFunctions(QtWidgets.QMainWindow):
         self.plotItem = self.addPlot(title="Recording: Signal")
         self.plotDataItem = self.plotItem.plot([], pen=None,
                                                symbolBrush=(255, 0, 0), symbolSize=5, symbolPen=None)
+
+    def init_zmq_sub_context(self):
+        connect_to = config.zmq_setup
+        ctx = zmq.Context()
+        s = ctx.socket(zmq.SUB)
+        s.connect(connect_to)
+        print(" Zmq Subscriber context generated for : %s" % connect_to)
+        s.setsockopt(zmq.SUBSCRIBE, b'')
+        return s
+
+    def zmq_receive(self):
+        data_list = self.zmq_sub_context.recv_pyobj()
+        data_2Dnumpy = np.asarray(data_list)
+        self.data = self.flatten1D(data_2Dnumpy)
+
+    def flatten1D(array_2d):
+        N_dim, M_dim = array_2d.shape
+        O_dim = N_dim * M_dim
+        return array_2d.reshape(O_dim)
+
     def refresh_plot(self,input_data):
         self.set_data(input_data=input_data)
         number_of_elements = len(input_data)
