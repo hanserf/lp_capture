@@ -53,14 +53,11 @@ def main():
         '-t', '--subtype', type=str, help='sound file subtype (e.g. "PCM_24")')
     args = parser.parse_args(remaining)
     #Start sampling process from input arguments
-    q = queue.Queue()
-    #recording_process= process_class.USBCollector(queue=q,packet_size=config.packet_size, parser=parser, args=args, rec_folder=default_savedir )
+    rec_queue = queue.Queue()
+    #recording_process= process_class.USBCollector(queue=rec_queue, packet_size=config.packet_size, parser=parser, args=args, rec_folder=default_savedir )
     #recording_process.daemon = True
     #recording_process.start()
     print("Recording Process started")
-    #-------------------------------------------------------------------------------------------------------------------
-    #   Create ZMQ Subscriber Context
-    # -------------------------------------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------------------------------------
     #   Create QTGui for inspecting recording
@@ -68,21 +65,10 @@ def main():
 
     app = QtWidgets.QApplication([])
     gui = qt_functions.QTGuiFunctions(config=config)
-    t_stop = len(data)/config.sample_rate
-    gui.set_plottime(0,t_stop,len(data))
-    print("Number of time points : %i " % len(gui.get_plottime()))
-    gui.set_data(data)
     gui.graphWidget.setTitle("ZMQ Test")
-    gui.update_plot()
+    print("Waiting for ZMQ Publisher to connect")
     gui.show()
     sys.exit(app.exec_())
-
-    print("   Done.")
-    #    while True:
-    #       print("service started")
-    #      time.sleep(1)
-
-    parser.exit(0)
 
 
 

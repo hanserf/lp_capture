@@ -32,7 +32,7 @@ import numpy
 #TODO Subscriptions to topics and topic generation should be enabled from qtgui
 import app.config as config
 def main():
-
+    run_mode = config.run_mode[1]
     bind_to = config.zmq_setup
     array_size = 192
     ctx = zmq.Context()
@@ -44,23 +44,25 @@ def main():
     time.sleep(1.0)
     print ("   Done.")
 
-    print ("Sending arrays...")
-    if config.run_mode == 'test':
+    print ("Entring run mode %s" % run_mode)
+
+    if run_mode == 'test':
         try:
             while True:
                 a = numpy.random.rand(array_size)
                 s.send_pyobj(a)
+                print("Sending")
                 delay_lower_limit = 900
                 delay_high_limit = 1000
                 timeDelay = random.randrange(delay_lower_limit, delay_high_limit)
-                time.sleep(timeDelay)
+                time.sleep(0.2)
 
         except KeyboardInterrupt:
             print('Quitting ZMQ Subscriber')
             s.close()
             ctx.destroy()
             exit(0)
-    else :
+    else:
         print("No other run modes defined")
         exit(0)
 

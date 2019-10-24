@@ -3,7 +3,9 @@ from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
 import sys  # We need sys so that we can pass argv to QApplication
 import numpy as np
+import time
 import os
+import queue
 import datetime as dt
 import app.config as config
 from collections import deque
@@ -11,7 +13,7 @@ import zmq
 
 class QTGuiFunctions(QtWidgets.QMainWindow):
 
-    def __init__(self, config, *args, **kwargs ):
+    def __init__(self, config,  *args, **kwargs ):
         super(QTGuiFunctions, self).__init__(*args, **kwargs)
 
         self.graphWidget = pg.PlotWidget()
@@ -19,65 +21,50 @@ class QTGuiFunctions(QtWidgets.QMainWindow):
         self.start_time = self.get_current_time()
         self.samp_rate=config.sample_rate
         self.rms_window_len =config.rms_window
-        self.duration = config.t_stop - config.t_start
-        self.num_points = self.get_num_points_in_plot(self.duration,self.samp_rate)
-        self.t_plot =np.linspace(config.t_start, config.t_stop, num=self.num_points, endpoint=True, retstep=False, dtype=None, axis=0)
+        duration = config.t_stop - config.t_start
+        num_points = self.get_num_points_in_plot(duration,self.samp_rate)
+        t_plot =np.linspace(config.t_start, config.t_stop, num=num_points, endpoint=True, retstep=False, dtype=None, axis=0)
         self.graphWidget.setBackground('w')
-        self.data = np.zeros(self.num_points)
-        self.graphWidget.plot(self.t_plot,self.data)
+        data = np.zeros(num_points)
+        self.graphWidget.plot(t_plot,data)
     # -------------------------------------------------------------------------------------------------------------------
-    #   ZMQ context for gui data subscription
-        self.zmq_sub_context = 0
-    # -------------------------------------------------------------------------------------------------------------------
-    #   ZMQ context for gui data subscription
-        self.zmq_queue = 0
-    #-------------------------------------------------------------------------------------------------------------------
-    #    Timer functions for real time updates
-        self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(self.duration*1000)  # in milliseconds
-        self.timer.start()
-        self.timer.timeout.connect(self.refresh_plot)
-        self.plotItem = self.addPlot(title="Recording: Signal")
-        self.plotDataItem = self.plotItem.plot([], pen=None,
-                                               symbolBrush=(255, 0, 0), symbolSize=5, symbolPen=None)
+    #    Threading and ZMQ Connection
+        self.thread = QtCore.QThread()
+        self.zeromq_listener = ZeroMQSubscriber()
+        self.zeromq_listener.moveToThread(self.thread)
+        self.thread.started.connect(self.zeromq_listener.loop)
+        self.zeromq_listener.message.connect(self.signal_received)
+        QtCore.QTimer.singleShot(1000, self.thread.start)
 
-    def init_zmq_sub_context(self):
-        connect_to = config.zmq_setup
-        ctx = zmq.Context()
-        s = ctx.socket(zmq.SUB)
-        s.connect(connect_to)
-        print(" Zmq Subscriber context generated for : %s" % connect_to)
-        s.setsockopt(zmq.SUBSCRIBE, b'')
-        return s
+    def signal_received(self, message):
+            data = message
+            #print(message)
+            self.refresh_plot(data)
+            #self.graphWidget.getPlotItem().clear()
+            #self.graphWidget.getPlotItem().plot()
 
-    def zmq_receive(self):
-        data_list = self.zmq_sub_context.recv_pyobj()
-        data_2Dnumpy = np.asarray(data_list)
-        self.data = self.flatten1D(data_2Dnumpy)
+    def closeEvent(self, event):
+            self.zeromq_listener.running = False
+            self.thread.quit()
+            self.thread.wait()
 
-    def flatten1D(array_2d):
-        N_dim, M_dim = array_2d.shape
-        O_dim = N_dim * M_dim
-        return array_2d.reshape(O_dim)
-
-    def refresh_plot(self,input_data):
-        self.set_data(input_data=input_data)
-        number_of_elements = len(input_data)
+    def refresh_plot(self,data):
+        number_of_elements = len(data)
         duration = number_of_elements/config.sample_rate
-        self.set_plottime(0,duration,number_of_elements)
-        self.start_time = self.get_current_time()
-        self.update_plot(input_data)
+        t_plot = self.return_plottime(0,duration,number_of_elements)
+        self.update_plot(t_plot,data)
 
     def set_data(self,input_data):
         self.data=input_data
 
-    def update_plot(self):
+    def update_plot(self,t_plot,data):
         pen = pg.mkPen(color=(255, 0, 0))
-        self.graphWidget.plot(self.t_plot, self.data, pen=pen)
+        self.graphWidget.getPlotItem().clear()
+        self.graphWidget.plot(t_plot, data, pen=pen)
 
-    def set_plottime(self, start, stop, num_points):
-        self.t_plot = np.linspace(start, stop, num=num_points, endpoint=True, retstep=False, dtype=None, axis=0)
-
+    def return_plottime(self, start, stop, num_points):
+        t_plot = np.linspace(start, stop, num=num_points, endpoint=True, retstep=False, dtype=None, axis=0)
+        return t_plot
 
     def get_num_points_in_plot(self, duration, samp_rate):
         return int(duration/samp_rate)
@@ -86,42 +73,33 @@ class QTGuiFunctions(QtWidgets.QMainWindow):
         return dt.datetime.now()
 
 
-    def get_plottime(self):
-        return self.t_plot
+    #def get_plottime(self):
+     #   return self.t_plot
 
 
 
+class ZeroMQSubscriber(QtCore.QObject):
 
+       message = QtCore.pyqtSignal(np.ndarray)
 
+       def __init__(self):
 
-class MyWidget(pg.GraphicsWindow):
+           QtCore.QObject.__init__(self)
 
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
+           # Socket to talk to server
+           connect_to = config.zmq_setup
+           zmq_sub_ctx = zmq.Context()
+           self.socket = zmq_sub_ctx.socket(zmq.SUB)
+           self.socket.connect(connect_to)
+           print(" Zmq Subscriber context generated for : %s" % connect_to)
+           self.socket.setsockopt(zmq.SUBSCRIBE, b'')
+           self.running = True
 
-        self.mainLayout = QtWidgets.QVBoxLayout()
-        self.setLayout(self.mainLayout)
-
-        self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(100) # in milliseconds
-        self.timer.start()
-        self.timer.timeout.connect(self.onNewData)
-
-        self.plotItem = self.addPlot(title="Lidar points")
-
-        self.plotDataItem = self.plotItem.plot([], pen=None,
-            symbolBrush=(255,0,0), symbolSize=5, symbolPen=None)
-
-
-    def setData(self, x, y):
-        self.plotDataItem.setData(x, y)
-
-
-    def onNewData(self):
-        numPoints = 1000
-        x = np.random.normal(size=numPoints)
-        y = np.random.normal(size=numPoints)
-        self.setData(x, y)
+       def loop(self):
+           while self.running:
+               data_list = self.socket.recv_pyobj()
+               data_numpy = np.asarray(data_list)
+               self.message.emit(data_numpy)
 
 #def main():
 #    starttime = dt

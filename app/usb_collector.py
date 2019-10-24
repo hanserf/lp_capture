@@ -5,6 +5,7 @@ import multiprocessing
 import tempfile
 import sys
 import os
+import queue
 import sounddevice as sd
 import soundfile as sf
 import numpy  # Make sure NumPy is loaded before it is used in the callback
