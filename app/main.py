@@ -3,12 +3,14 @@ import argparse
 import queue
 import sys
 import time
+from PyQt5 import QtWidgets, uic
 import sounddevice as sd
 import numpy  # Make sure NumPy is loaded before it is used in the callback
 assert numpy  # avoid "imported but unused" message (W0611)
 import app.usb_collector as process_class
 import app.config as config
-import queue
+import app.qtgui_functions as qt_functions
+
 
 def int_or_str(text):
     """Helper function for argument parsing."""
@@ -51,15 +53,29 @@ def main():
         '-t', '--subtype', type=str, help='sound file subtype (e.g. "PCM_24")')
     args = parser.parse_args(remaining)
     #Start sampling process from input arguments
-    q = queue.Queue()
-    recording_process= process_class.USBCollector(queue=q,packet_size=config.packet_size, parser=parser, args=args, rec_folder=default_savedir )
-    recording_process.daemon = True
-    recording_process.start()
+    rec_queue = queue.Queue()
+    #recording_process= process_class.USBCollector(queue=rec_queue, packet_size=config.packet_size, parser=parser, args=args, rec_folder=default_savedir )
+    #recording_process.daemon = True
+    #recording_process.start()
     print("Recording Process started")
-    while True:
-        print("service started")
-        time.sleep(1)
-    #TODO start zmq subscribe socket:
+
+    # -------------------------------------------------------------------------------------------------------------------
+    #   Create QTGui for inspecting recording
+    # -------------------------------------------------------------------------------------------------------------------
+
+    app = QtWidgets.QApplication([])
+    gui = qt_functions.QTGuiFunctions(config=config)
+    gui.graphWidget.setTitle("ZMQ Test")
+    print("Waiting for ZMQ Publisher to connect")
+    gui.show()
+    sys.exit(app.exec_())
+
+
+
+
+
+
+
 
 
 

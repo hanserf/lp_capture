@@ -5,6 +5,7 @@ import multiprocessing
 import tempfile
 import sys
 import os
+import queue
 import sounddevice as sd
 import soundfile as sf
 import numpy  # Make sure NumPy is loaded before it is used in the callback
@@ -72,7 +73,6 @@ class USBCollector(multiprocessing.Process):
             self.make_folder()
         else:
             print("Recording folder exists")
-
 
     def make_folder(self):
         # Make folder for Interesting images
