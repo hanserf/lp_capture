@@ -28,10 +28,10 @@ class QTGuiFunctions(QtWidgets.QMainWindow):
     # -------------------------------------------------------------------------------------------------------------------
     #   ZMQ context for gui data subscription
         self.zmq_sub_context = 0
-        # -------------------------------------------------------------------------------------------------------------------
-        #   ZMQ context for gui data subscription
-        self.zmq_queue = 0;
-        #-------------------------------------------------------------------------------------------------------------------
+    # -------------------------------------------------------------------------------------------------------------------
+    #   ZMQ context for gui data subscription
+        self.zmq_queue = 0
+    #-------------------------------------------------------------------------------------------------------------------
     #    Timer functions for real time updates
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(self.duration*1000)  # in milliseconds

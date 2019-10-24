@@ -24,15 +24,17 @@ use a REQ/REP side channel to synchronize the two processes at the beginning.
 
 import sys
 import time
-
+import random
 import zmq
 import numpy
-
+#TODO Wrap this up in a class. Make it possible to spawn multiple publishers with topics.
+#TODO Define topics in config. Topics will be signal processing related.
+#TODO Subscriptions to topics and topic generation should be enabled from qtgui
+import app.config as config
 def main():
 
-    bind_to = 'tcp://127.0.0.1:5000'
+    bind_to = config.zmq_setup
     array_size = 192
-    array_count = 10
     ctx = zmq.Context()
     s = ctx.socket(zmq.PUB)
     s.bind(bind_to)
@@ -43,10 +45,25 @@ def main():
     print ("   Done.")
 
     print ("Sending arrays...")
-    for i in range(array_count):
-        a = numpy.random.rand(array_size)
-        s.send_pyobj(a)
-    print ("   Done.")
+    if config.run_mode == 'test':
+        try:
+            while True:
+                a = numpy.random.rand(array_size)
+                s.send_pyobj(a)
+                delay_lower_limit = 900
+                delay_high_limit = 1000
+                timeDelay = random.randrange(delay_lower_limit, delay_high_limit)
+                time.sleep(timeDelay)
+
+        except KeyboardInterrupt:
+            print('Quitting ZMQ Subscriber')
+            s.close()
+            ctx.destroy()
+            exit(0)
+    else :
+        print("No other run modes defined")
+        exit(0)
+
 
 if __name__ == "__main__":
     main()
