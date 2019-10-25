@@ -55,7 +55,7 @@ def main():
                 delay_lower_limit = 900
                 delay_high_limit = 1000
                 timeDelay = random.randrange(delay_lower_limit, delay_high_limit)
-                time.sleep(0.2)
+                time.sleep(0.05)
 
         except KeyboardInterrupt:
             print('Quitting ZMQ Subscriber')
