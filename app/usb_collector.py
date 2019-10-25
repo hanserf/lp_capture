@@ -56,6 +56,8 @@ class USBCollector(multiprocessing.Process):
                         if samp_cntr % max_packet_len == 0:
                             print("Raw data type %s " % type(raw_data) + ", Raw data length %f" % len(
                                 raw_data) + " , max payload length = %i " % max_packet_len)
+
+
         except KeyboardInterrupt:
             print('\nRecording finished: ' + repr(self.args.filename))
             self.q.parser.exit(0)
@@ -98,3 +100,4 @@ class USBCollector(multiprocessing.Process):
             exit(1)
         else:
             print("Changing directory path to  %s " % self.recording_folder)
+

@@ -34,14 +34,12 @@ class QTGuiFunctions(QtWidgets.QMainWindow):
         self.zeromq_listener.moveToThread(self.thread)
         self.thread.started.connect(self.zeromq_listener.loop)
         self.zeromq_listener.message.connect(self.signal_received)
-        QtCore.QTimer.singleShot(1000, self.thread.start)
+        QtCore.QTimer.singleShot(10, self.thread.start)
 
     def signal_received(self, message):
             data = message
             #print(message)
             self.refresh_plot(data)
-            #self.graphWidget.getPlotItem().clear()
-            #self.graphWidget.getPlotItem().plot()
 
     def closeEvent(self, event):
             self.zeromq_listener.running = False
@@ -54,9 +52,6 @@ class QTGuiFunctions(QtWidgets.QMainWindow):
         t_plot = self.return_plottime(0,duration,number_of_elements)
         self.update_plot(t_plot,data)
 
-    def set_data(self,input_data):
-        self.data=input_data
-
     def update_plot(self,t_plot,data):
         pen = pg.mkPen(color=(255, 0, 0))
         self.graphWidget.getPlotItem().clear()
@@ -67,25 +62,16 @@ class QTGuiFunctions(QtWidgets.QMainWindow):
         return t_plot
 
     def get_num_points_in_plot(self, duration, samp_rate):
-        return int(duration/samp_rate)
+        return int(duration*samp_rate)
 
     def get_current_time(self):
         return dt.datetime.now()
 
 
-    #def get_plottime(self):
-     #   return self.t_plot
-
-
-
 class ZeroMQSubscriber(QtCore.QObject):
-
        message = QtCore.pyqtSignal(np.ndarray)
-
        def __init__(self):
-
            QtCore.QObject.__init__(self)
-
            # Socket to talk to server
            connect_to = config.zmq_setup
            zmq_sub_ctx = zmq.Context()
