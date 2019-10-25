@@ -6,6 +6,7 @@ import tempfile
 import sys
 import os
 import queue
+import app.zmq_publisher as zmq_publisher
 import sounddevice as sd
 import soundfile as sf
 import numpy  # Make sure NumPy is loaded before it is used in the callback
@@ -20,6 +21,7 @@ class USBCollector(multiprocessing.Process):
         self.args = args
         self.parser = parser
         self.recording_folder = rec_folder
+        self.zmq = zmq_publisher.ZMQ_Publisher()
 
 
     def run(self) -> None:
@@ -53,10 +55,11 @@ class USBCollector(multiprocessing.Process):
                         packet_len = len(raw_data)
                         new_max = self.find_max_packet_len(packet_len, max_packet_len)
                         max_packet_len = new_max
-                        if samp_cntr % max_packet_len == 0:
-                            print("Raw data type %s " % type(raw_data) + ", Raw data length %f" % len(
-                                raw_data) + " , max payload length = %i " % max_packet_len)
-
+                        if samp_cntr % 500 == 0:
+                            print("Raw data type %s " % type(raw_data) + ", Raw data length %f" % len(raw_data) + " , max payload length = %i " % max_packet_len)
+                            message = np.ndarray.flatten(raw_data)
+                            print(message)
+                            self.zmq.send_message(message)
 
         except KeyboardInterrupt:
             print('\nRecording finished: ' + repr(self.args.filename))

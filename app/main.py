@@ -19,9 +19,8 @@ def int_or_str(text):
     except ValueError:
         return text
 
-#TODO Add multiprocessing and start recording process.
+#TODO Make Subscriber start before Publisher.
 #TODO Add Argparser outside of main
-#TODO QT plot of realtime data.
 #TODO Equalizer and gain control.
 
 def main():
@@ -52,12 +51,7 @@ def main():
     parser.add_argument(
         '-t', '--subtype', type=str, help='sound file subtype (e.g. "PCM_24")')
     args = parser.parse_args(remaining)
-    #Start sampling process from input arguments
-    rec_queue = queue.Queue()
-    #recording_process= process_class.USBCollector(queue=rec_queue, packet_size=config.packet_size, parser=parser, args=args, rec_folder=default_savedir )
-    #recording_process.daemon = True
-    #recording_process.start()
-    print("Recording Process started")
+
 
     # -------------------------------------------------------------------------------------------------------------------
     #   Create QTGui for inspecting recording
@@ -68,6 +62,21 @@ def main():
     gui.graphWidget.setTitle("ZMQ Test")
     print("Waiting for ZMQ Publisher to connect")
     gui.show()
+
+    # -------------------------------------------------------------------------------------------------------------------
+    #   Create A Process for recording data
+    # -------------------------------------------------------------------------------------------------------------------
+    rec_queue = queue.Queue()
+    recording_process = process_class.USBCollector(queue=rec_queue, packet_size=config.packet_size, parser=parser,
+                                                   args=args, rec_folder=default_savedir)
+    recording_process.daemon = True
+    recording_process.start()
+    print("Recording Process started")
+
+    # -------------------------------------------------------------------------------------------------------------------
+    #   Start Gui Service
+    # -------------------------------------------------------------------------------------------------------------------
+
     sys.exit(app.exec_())
 
 

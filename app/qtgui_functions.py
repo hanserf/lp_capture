@@ -82,6 +82,7 @@ class ZeroMQSubscriber(QtCore.QObject):
            self.running = True
 
        def loop(self):
+           print("Entering ZMQ Listening Loop ")
            while self.running:
                data_list = self.socket.recv_pyobj()
                data_numpy = np.asarray(data_list)
