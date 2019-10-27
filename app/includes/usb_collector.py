@@ -21,8 +21,8 @@ class USBCollector(multiprocessing.Process):
         self.args = args
         self.parser = parser
         self.recording_folder = rec_folder
-        self.zmq = zmq_publisher.ZMQ_Publisher()
-
+        self.zmq_sink = zmq_publisher.ZMQ_Publisher()
+        #self.zmq_ctrl = zmq_reply
 
     def run(self) -> None:
         print("Entering Recording loop")
@@ -59,7 +59,7 @@ class USBCollector(multiprocessing.Process):
                             print("Raw data type %s " % type(raw_data) + ", Raw data length %f" % len(raw_data) + " , max payload length = %i " % max_packet_len)
                             message = np.ndarray.flatten(raw_data)
                             print(message)
-                            self.zmq.send_message(message)
+                            self.zmq_sink.send_message(message)
 
         except KeyboardInterrupt:
             print('\nRecording finished: ' + repr(self.args.filename))

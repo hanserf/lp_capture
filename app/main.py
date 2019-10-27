@@ -7,9 +7,9 @@ from PyQt5 import QtWidgets, uic
 import sounddevice as sd
 import numpy  # Make sure NumPy is loaded before it is used in the callback
 assert numpy  # avoid "imported but unused" message (W0611)
-import app.usb_collector as process_class
-import app.config as config
-import app.qtgui_functions as qt_functions
+import app.includes.usb_collector as process_class
+import app.includes.config as config
+import app.includes.qtgui_functions as qt_functions
 
 
 def int_or_str(text):

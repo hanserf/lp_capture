@@ -10,6 +10,7 @@ import datetime as dt
 import app.config as config
 from collections import deque
 import zmq
+import app.zmq_pub_backend as zmq_backend
 
 class QTGuiFunctions(QtWidgets.QMainWindow):
 
@@ -35,6 +36,8 @@ class QTGuiFunctions(QtWidgets.QMainWindow):
         self.thread.started.connect(self.zeromq_listener.loop)
         self.zeromq_listener.message.connect(self.signal_received)
         QtCore.QTimer.singleShot(10, self.thread.start)
+
+
 
     def signal_received(self, message):
             data = message
@@ -87,6 +90,42 @@ class ZeroMQSubscriber(QtCore.QObject):
                data_list = self.socket.recv_pyobj()
                data_numpy = np.asarray(data_list)
                self.message.emit(data_numpy)
+
+class ZMQRequest:
+    def __init__(self,PORT):
+        # Socket to talk to server
+        self.run_mode = config.run_mode[1]
+        connect_to = config.zmq_proto_ip + ':' + PORT
+        self.zmq_req_ctx = zmq.Context()
+        self.array_size = 192
+        self.socket = self.zmq_req_ctx.socket(zmq.REQ)
+        self.socket.connect(connect_to)
+        print("Generated ZMQ Request Server")
+        self.running = True
+        self.armed = True
+
+    def stop_running(self):
+        self.running = False
+
+    def start_running(self):
+        self.running = True
+
+    def send_message(self,message):
+        print("REQUEST: %s" % message)
+        self.socket.send(message)
+
+    def receive_message(self):
+        message = self.socket.recv()
+        print("REPLY : %s" % message)
+        return message
+
+    def close_connection(self):
+        print('Quitting ZMQ Request')
+        self.socket.close()
+        self.zmq_rep_ctx.destroy()
+
+    def terminate_session(self):
+        exit(0)
 
 #def main():
 #    starttime = dt

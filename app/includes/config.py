@@ -8,8 +8,11 @@ from datetime import datetime
 #Remote Control
 #################################################
 run_mode = ["run","test","debug"]
-zmq_setup = 'tcp://127.0.0.1:5000'
-ip_addr_local='127.0.0.1'
+zmq_proto_ip = 'tcp://127.0.0.1'
+zmq_port_pubsub = '3739'
+zmq_port_reqrep = '3740'
+zmq_topics_list = ["timewindow" , "fft_window" , "rms" ]
+
 default_save_dir = 'raw_recording'
 starttime = datetime.now()
 timestamp = datetime.timestamp(starttime)
