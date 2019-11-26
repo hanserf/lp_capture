@@ -32,72 +32,43 @@ import queue
 #TODO Wrap this up in a class. Make it possible to spawn multiple publishers with topics.
 #TODO Define topics in config. Topics will be signal processing related.
 #TODO Subscriptions to topics and topic generation should be enabled from qtgui
-import app.config as config
-
-class CapturePackage:
-    def __init__(self, samp_rate, n_samples):
-        self.samp_rate = samp_rate
-        self.n_samp = n_samples
-        self.capture_time = self.set_capture_time()
-        self.l_raw_data = np.zeros(self.n_samp)
-        self.r_raw_data = np.zeros(self.n_samp)
-        self.l_fft_data = np.zeros(self.n_samp)
-        self.r_fft_data = np.zeros(self.n_samp)
-        self.modes = []
-        self.modes.append("Stereo")
-        self.modes.append("Mono")
-
-    def __str__(self):
-        return ",".join(["{}:{} ".format(k, v) for k, v in self.__dict__.items()])
-
-    __repr__ = __str__
-
-    def set_capture_time(self):
-        self.capture_time = self.n_samples * self.samp_rate
-
+import app.includes.config as config
 
 class ZMQBackend:
-    def __init__(self, running, armed, topics, processing):
-        self.running = running
-        self.armed = armed
-        self.topics_list = topics
-        self.capture_enable=processing[0]
-        self.fft_enable = processing[1]
+    def __init__(self):
         self.zmq_service_ip=config.zmq_proto_ip
         self.zmq_context = zmq.Context()
+        self.zmq_pubsub_port = config.zmq_port_pubsub
+        self.publisher = 0
+        self.zmq_reqrep_port = config.zmq_port_reqrep
+        self.reply_server = ZMQReply(context=self.zmq_context,proto_ip=self.zmq_service_ip,port=self.zmq_reqrep_port)
+
     def __str__(self):
         return ",".join(["{}:{} ".format(k, v) for k, v in self.__dict__.items()])
 
     __repr__ = __str__
 
-    def check_running(self):
-        return self.running
+    def decode_request(self,request):
+        if request == "START_PUB":
+            self.init_publisher()
 
-    def set_running(self):
-        self.running = True
 
-    def check_armed(self):
-        return self.armed
-
-    def set_armed(self):
-        self.armed = True
-
+    def init_publisher(self):
+        self.publisher = ZMQPublisher(context=self.zmq_context, proto_ip=self.zmq_service_ip, port=self.zmq_pubsub_port)
 
 class ZMQPublisher:
-    def __init__(self,PORT):
+    def __init__(self,context, proto_ip,port):
         # Socket to talk to server
         self.run_mode = config.run_mode[1]
-        #self.topic = topic
-        self.zmq_backend = ZMQBackend(running=False,armed=True,topics_list=config.zmq_topics_list)
-        bind_to = self.zmq_backend.zmq_service_ip + ':' + PORT
-        self.zmq_pub_ctx = self.zmq_backend.zmq_context
+        self.topics_dict = {"dummy_entry":0}
+        bind_to = proto_ip + ':' + port
+        self.zmq_pub_ctx = context
         self.socket = self.zmq_pub_ctx.socket(zmq.PUB)
         self.socket.bind(bind_to)
         print("Generated ZMQ Publisher: %s" %self.zmq_backend)
-        self.running = self.zmq_backend.check_running()
-        self.armed  = self.zmq_backend.check_armed()
-        # Initializing results structure
-        self.data_capture = CapturePackage(samp_rate=config.sample_rate, n_samples=config.packet_size)
+        #Control
+        self.running = False
+        self.armed  = True
 
 
     def __str__(self):
@@ -110,15 +81,11 @@ class ZMQPublisher:
         self.socket.send_pyobj(payload)
         print("Sent single message")
 
-    def generate_random_data(self):
-        a = np.random.rand(self.num)
-
-    def send_timeseries(self):
-        self.send_message(self.data_capture.r_fft_data)
-
+    def set_state_running(self):
+        self.running = True
 
     def close_connection(self):
-        print('Quitting ZMQ Subscriber')
+        print('Quitting ZMQ Publisher')
         self.socket.close()
         self.zmq_pub_ctx.destroy()
 
@@ -126,53 +93,36 @@ class ZMQPublisher:
         exit(0)
 
     def publish_all_topics_list(self):
-        msg_counter = itertools.count()
-        try:
-            for topic in itertools.cycle(self.zmq_backend.topics_list):
-                msg_body = str(msg_counter.next())
-                print('ZMQ_PUBLISHER_TOPICS : %s,' % (topic, msg_body))
-                self.socket.send_pyobj(topic)
-                time.sleep(0.01)
-        except KeyboardInterrupt:
-            pass
+        for topic in self.zmq_backend.topics_dict:
+            self.socket.send_pyobj(str(topic), flags=zmq.SNDMORE)
+            self.socket.send_pyobj(self.topics_dict[topic])
+            time.sleep(1e-5)
 
+    def publish_topic(self,topic):
+        self.socket.send_pyobj(str(topic),flags=zmq.SNDMORE)
+        self.socket.send_pyobj(self.topics_dict.get(topic))
 
-    def loop(self):
-        print ("Entring run mode %s" % self.run_mode)
-        while self.running == True:
+    def delete_topic(self,topic):
+        del self.topics_dict[topic]
 
-            self.send_message(a)
-            time.sleep(0.2)
+    def add_topic(self, topic_key, topic_value):
+        self.topics_dict.update({topic_key: topic_value})
+
 
 
 
 class ZMQReply:
-    def __init__(self,PORT):
+    def __init__(self,context,proto_ip,port):
         # Socket to talk to server
-        self.run_mode = config.run_mode[1]
-        self.zmq_backend = ZMQBackend()
-        bind_to = config.zmq_proto_ip + ':' + PORT
-        self.zmq_rep_ctx = zmq.Context()
-        self.array_size = 192
+        bind_to = proto_ip + ':' + port
+        self.zmq_rep_ctx = context
         self.socket = self.zmq_rep_ctx.socket(zmq.REP)
         self.socket.bind(bind_to)
         print("Generated ZMQ Reply Server")
-        self.running = True
-        self.armed = True
-
-    def stop_running(self):
-        self.running = False
-
-    def start_running(self):
-        self.running = True
 
     def send_message(self,message):
         print("REPLY: %s" % message)
         self.socket.send(message)
-
-    def state_decoder(self,message):
-        if message == 'run':
-            self.start_running()
 
     def receive_message(self):
         message = self.socket.recv()
@@ -189,19 +139,12 @@ class ZMQReply:
 
 
 
-
-def zmq_pub_testfun(num_messages,interval_s):
-
-
-    for i in range(num_messages):
-        a = numpy.random.rand(zmqtest.array_size)
-        zmqtest.send_message(a)
-        time.sleep(interval_s)
-    zmqtest.close_connection()
-    zmqtest.terminate_session()
-
-def main()
-    zmq_pub_testfun(20, 0.5)
+def main():
+    backend = ZMQBackend()
+    print("Initialized service, waiting for client connection")
+    while(1):
+        request = backend.reply_server.receive_message()
+        backend.decode_request(request)
 
 
 if __name__ == "__main__":
