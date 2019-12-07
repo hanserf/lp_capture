@@ -112,21 +112,20 @@ class ZMQReply:
     def terminate_session(self):
         exit(0)
 
-def random_samples():
-    return 100 * np.random.rand(20)
 
 def main():
     debug_writer = ZMQBackend()
     debug_writer.connect_to_master()
     n_iterations = 100
-    data = random_samples()
+    data = np.random.normal(size=20)
     topic = "random_numbers"
     debug_writer.publisher.send_message(topic, data)
 
     for i in range(n_iterations):
         print("Publishing number %d" %i)
         debug_writer.publisher.publish_topic("random_numbers")
-        time.sleep(0.2)
+        time.sleep(1/50)
+        data = np.random.normal(size=20)
         debug_writer.publisher.send_message(topic,data)
 
 if __name__ == "__main__":
