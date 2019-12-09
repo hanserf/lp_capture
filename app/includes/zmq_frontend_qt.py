@@ -94,7 +94,8 @@ class ZMQSubscriber(QtCore.QObject):
         self.socket = self.zmq_sub_ctx.socket(zmq.SUB)
         self.socket.connect(connect_to)
         print(" Zmq Subscriber context generated for : %s" % connect_to)
-        self.socket.setsockopt(zmq.SUBSCRIBE, b"random_numbers")
+        self.socket.setsockopt(zmq.SUBSCRIBE, b"channel_0")
+        self.socket.setsockopt(zmq.SUBSCRIBE, b"channel_1")
         self.running = True
 
     def zmq_get_subscription(self):

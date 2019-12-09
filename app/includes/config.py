@@ -8,7 +8,7 @@ from datetime import datetime
 #Remote Control
 #################################################
 run_mode = ["run","test","debug"]
-zmq_proto_ip = 'tcp://127.0.0.1'
+zmq_proto_ip = 'tcp://*'
 zmq_port_pubsub = '3739'
 zmq_port_reqrep = '3740'
 zmq_topics_list = ["timewindow" , "fft_window" , "rms" ]
@@ -33,4 +33,8 @@ rms_window = 2048
 t_start = 0
 t_stop = 100e-3
 
-
+#################################################
+# ZMQ Device
+#################################################
+zmq_port_producer_streamer = '5559'
+zmq_port_streamer_worker = '5560'
