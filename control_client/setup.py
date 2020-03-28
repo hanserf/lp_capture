@@ -13,7 +13,7 @@ setup(
     include_package_data=True,
     entry_points={
         'console_scripts': [
-            'lp_capture=client.main:main'
+            'lp_client=client.main:main'
         ],
     }
 )
