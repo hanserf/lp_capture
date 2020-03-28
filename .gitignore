@@ -4,5 +4,6 @@ venv
 .idea
 build/
 dist/
-lp_capture.egg-info/
+lp_server.egg-info/
+lp_client.egg-info/
 *__pycache__

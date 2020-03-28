@@ -18,7 +18,10 @@ This class interacts with hardware module and is based on some tutorial.
 The USB Collector interacts with a USB sound device and captures samplestream into a buffer
 It uses threading to capture input stream.
 Device and buffer Semaphore for source exclusivety and synchronization
-Records data to ram using io.ByteIO()
+Thread callback collects samples from input device into a Queue buffer structure.
+Acquiring the semaphore will write the content of the buffer queue into the ram file. 
+Ram file is created using io.ByteIO()
+
  
 """
 
@@ -33,9 +36,9 @@ class SoundDeviceStop(Exception):
    pass
 
 
-class USBCollector(Thread):
-    def __init__(self, buffer_window_s,args, parser, rec_folder):
-        super(USBCollector, self).__init__()
+class AudioRecorder(Thread):
+    def __init__(self, buffer_window_s,args, parser, uptime_callback=None):
+        super(AudioRecorder, self).__init__()
         self.args = args
         self.parser = parser
         self.device_sem = BoundedSemaphore()
@@ -45,6 +48,8 @@ class USBCollector(Thread):
         self.sound_file = None
         self.capture_buffer_timeout = buffer_window_s
         self.aborted = Event()
+        self.uptime_callback = uptime_callback
+        self.start_time
 
     def __init_sounddevice(self,buffer_window_s):
         """
@@ -62,16 +67,43 @@ class USBCollector(Thread):
             if self.args.file is None:
                 buffer_file =  io.ByteIO()
                 self.args.file = buffer_file
+            self.uptime_callback(0)
         except:
             raise SoundDeviceError
         finally:
             self.device_sem.release()
+    
+    def __clear_abort(self):
+        self.aborted.clear()
+
+    def __is_aborted(self):
+        return self.aborted.isSet()
+         
+    def stop_recording(self):
+        self.aborted.set()           
 
 
-    def __enable_recording(self):
+    def enable_recording(self, timeout, n_attempts):
+        cntr = 0
+        while cntr <n_attempts:
+            try:
+                if not self.__enable_recording(timeout):
+                    raise SoundDeviceError
+                return True
+            except SoundDeviceError:
+                print("Struggling to connect with recording device. Please check connections or input settings")
+                cntr+=1    
+            except KeyboardInterrupt:
+                break
+        return False
+
+    """
+        __enable recording controls the capture thread.
+    """
+    def __enable_recording(self,timeout):
         try:
-            
-            self.device_sem.acquire()
+            if not self.device_sem.acquire(timeout=timeout):
+                raise SoundDeviceError
             log.info("->INPUT-DEVICE-AQUIRED")
             # Make sure the file is opened before recording anything:
             with sf.SoundFile(self.args.file, mode='x', samplerate=self.args.samplerate,channels=self.args.channels, subtype=self.args.subtype) as self.sound_file:
@@ -79,51 +111,71 @@ class USBCollector(Thread):
                 cThread.start()
                 cThread.join()
 
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt,SoundDeviceStop):
+            self.stop_recording()
             log.info("->ABORT-EXIT")
             print('\nRecording finished')
             cThread.join()
-            self.parser.exit(0)
-                  
-        except Exception as e:
-            self.parser.exit(type(e).__name__ + ': ' + str(e))
         
+        except SoundDeviceError:
+            raise
         finally:
+            self.device_sem.release()
+            if self.__is_aborted():
+                log.info("->CAPTURE-ABORTED")
+                print('\nRecording Aborted')
+                return False
+                
             log.info("->CAPTURE-COMPLETE")
             print('\nRecording finished')
-            self.device_sem.release()
-            
+            return True
 
     def __start_capture(self) -> None:
         print("Entering Recording loop")
         log.info("-->CAPTURE-START")
+        self.__clear_abort()    
         try: 
+            self.start_time = time.time()
+            uptime = 0
             with sd.InputStream(samplerate=self.args.samplerate, device=self.args.device, channels=self.args.channels, callback=self.__buffer_callback):
-                
                 while True:
                     self.done_sem.acquire(timeout=self.capture_buffer_timeout)
                     if not self.__is_aborted():
-                        log.debug("---->CAPTURE BUFFER TO FILE")
+                        uptime = time.time()-self.start_time 
+                        self.uptime_callback(uptime)
+                        log.debug("---->CAPTURE BUFFER TO FILE, UPTIME: {}".format(uptime))
                         raw_data = self.buffer.get()
                         self.sound_file.write(raw_data)
                         self.done_sem.release()
                     else:
                         self.done_sem.release()
                         break
+                self.uptime_callback(0)
     
         except SoundDeviceStop:
             self.aborted.set()
             
-
     def __buffer_callback(self, indata, frames, time, status):
         """This is called (from a separate thread) for each audio block."""
         if status:
             print(status, file=sys.stderr)
         self.buffer.put(indata.copy())
-
-    def __is_aborted(self):
-        return self.aborted.isSet()
-
+    
+    def read_file_raw(self,n_retries,timeout):
+        cntr = 0
+        while cntr < n_retries:
+            try:
+                if not self.done_sem.acquire(timeout=timeout):
+                    raise SoundDeviceError
+                output = io.BytesIO()
+                output.write(self.sound_file.read())
+                self.done_sem.release()
+                return output.getvalue()
+            except SoundDeviceError:
+                cntr += 1
+            except KeyboardInterrupt:
+                break
+        return None
    
 def test():
     # Create Logger / Log Handler
