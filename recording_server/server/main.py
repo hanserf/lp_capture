@@ -3,13 +3,12 @@ import argparse
 import queue
 import sys
 import time
-from PyQt5 import QtWidgets, uic
 import sounddevice as sd
 import numpy  # Make sure NumPy is loaded before it is used in the callback
 assert numpy  # avoid "imported but unused" message (W0611)
-import app.usb_collector as process_class
-import app.config as config
-import app.qtgui_functions as qt_functions
+from server.usb_collector import USBCollector
+import server.config as config
+import server.qtgui_functions as qt_functions
 
 
 def int_or_str(text):
