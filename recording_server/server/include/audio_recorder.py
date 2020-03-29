@@ -25,7 +25,7 @@ Ram file is created using io.ByteIO()
  
 """
 
-log = logging.getLogger('LP-Server')
+log = logging.getLogger('AudioRecorder')
 
 class SoundDeviceError(Exception):
    """Raised when A random Sounddevice error occured"""
@@ -37,35 +37,36 @@ class SoundDeviceStop(Exception):
 
 
 class AudioRecorder(Thread):
-    def __init__(self, buffer_window_s,args, parser, uptime_callback=None):
+    def __init__(self, args, parser, uptime_callback=None):
         super(AudioRecorder, self).__init__()
         self.args = args
         self.parser = parser
         self.device_sem = BoundedSemaphore()
         self.done_sem = BoundedSemaphore()    
         self.buffer = Queue()
-        self.__init_sounddevice(buffer_window_s)
         self.sound_file = None
-        self.capture_buffer_timeout = buffer_window_s
+        self.capture_buffer_timeout = 0
         self.aborted = Event()
         self.uptime_callback = uptime_callback
-        self.start_time
+        self.start_time = 0
 
-    def __init_sounddevice(self,buffer_window_s):
+
+    def init_sounddevice(self):
         """
             Take the sounddevice
             Parse device info into control argments
         """
         try :
             self.device_sem.acquire()
+            self.capture_buffer_timeout = self.args.buffer_width_s[0]
             device_info = sd.query_devices(self.args.device, 'input')
             # soundfile expects an int, sounddevice provides a float:
             self.args.name = device_info['name']
             self.args.samplerate = int(device_info['default_samplerate'])
-            self.args.buffersize = int(self.args.samplerate*float(buffer_window_s))
+            self.args.buffersize = int(self.args.samplerate*float(self.capture_buffer_timeout))
             self.args.channels = device_info['max_input_channels']
             if self.args.file is None:
-                buffer_file =  io.ByteIO()
+                buffer_file =  io.BytesIO()
                 self.args.file = buffer_file
             self.uptime_callback(0)
         except:
