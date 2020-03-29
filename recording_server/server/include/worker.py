@@ -35,6 +35,8 @@ def control():
             super(MyPrompt, self).__init__()
             self.recorder = None
             self.uptime = 0
+            self.timeout = 0
+            self.attempts = 0
         """
             Default Functions for the shell and Argparse
         """
@@ -62,13 +64,6 @@ def control():
         help_EOF = help_exit
 
         
-        def do_read(self,inp):
-            #compressed = self.shell.read_shell_status(5)
-            #print("Compressed Length : {}".format(len(compressed)))
-            #data = self.shell.gunzip_bytes_obj(compressed)
-            #print("Output len : {}".format(len(data)))
-            #print("stdout: \n{}".format(data))
-            return True
             
                
         def do_init(self,inp):
@@ -86,7 +81,7 @@ def control():
                     formatter_class=argparse.RawDescriptionHelpFormatter,
                     parents=[parser])
                 parser.add_argument(
-                    'file', nargs='?', metavar='FILENAME',
+                    'file', nargs='?',default=None, metavar='FILENAME',
                     help='Capture file, Defaults to ram')
                 
                 parser.add_argument(
@@ -98,37 +93,49 @@ def control():
                     '-c', '--channels', type=int, default=1, help='number of input channels')
                 parser.add_argument(
                     '-t', '--subtype', type=str, help='sound file subtype (e.g. "PCM_24")')
+                parser.add_argument(
+                    '-bt', '--timeout', type=int, default=5, help='Buffer read timeout')
+                parser.add_argument(
+                    '-nr', '--num_retries', type=int, default=3, help='Number of attempts the application will make to succeed')
                 
                 args = parser.parse_known_args()
                 args = parser.parse_args(inp.split())    
+                self.timeout = args.timeout 
+                self.attempts = args.num_retries
                 if args.list_devices:         
                     print(sd.query_devices()) 
-                elif args.buffer_width_s:
+                if args.buffer_width_s:
                     self.recorder = AudioRecorder(args=args,parser=parser,uptime_callback=self.__uptime_callback)
                     self.recorder.init_sounddevice()
-                else:
-                    print("Supply buffer width in [s] to start recording")
+                
+
             except SystemExit:
-                print("Resuming")        
+                print("Resuming \r\n\r\n")        
 
         def help_recording(self):
             print("Start recording.")
-            print("Input :")
-            print("Arg[0] : timeout")
-            print("Arg[1] : number of attempts")
-
-        def do_recording(self, inp):
+            
+        def do_record(self, inp):
             if self.recorder is None:
                 print("Device Not Initialized")
                 return False
-            cmd = inp.split()
-            timeout = int(cmd[0])
-            attempts = int(cmd[1])
-            self.recorder.enable_recording(timeout=timeout,n_attempts=attempts)
+            self.recorder.enable_recording(timeout=self.timeout,n_attempts=self.attempts)
             print("Recording Process started")
             
-                        
+        def help_stop_recording(self):
+            print("Stop the recording thread")
+            
+        def do_uptime(self, inp):
+            print("-->UPTIME: {}s".format(self.uptime))
+        
+        def do_stop_recording(self, inp):
+            self.recorder.stop_recording()
+            print("Recording Stopped")                
 
+        def do_read(self,inp):
+            print("Fetching recorded audio")
+            recorded = self.recorder.read_file_raw(self.timeout,self.attempts)
+            print("size of recorded audio : {} \n Type of recorded audio:\n{}".format(len(recorded),type(recorded)))
 
     MyPrompt().cmdloop()
 
