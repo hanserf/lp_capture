@@ -37,16 +37,16 @@ class SoundDeviceStop(Exception):
 
 
 class AudioRecorder(Thread):
-    def __init__(self, args, parser, uptime_callback=None):
+    def __init__(self, args, parser,e_new_data,e_abort, uptime_callback=None):
         super(AudioRecorder, self).__init__()
         self.args = args
         self.parser = parser
-        self.device_sem = BoundedSemaphore()
-        self.done_sem = BoundedSemaphore()    
+        self.recording_sem = BoundedSemaphore()    
         self.buffer = Queue()
         self.sound_file = None
         self.capture_buffer_timeout = 0
-        self.aborted = Event()
+        self.aborted = e_abort
+        self.new_data = e_new_data
         self.uptime_callback = uptime_callback
         self.start_time = 0
         self.sucess = False
@@ -58,7 +58,6 @@ class AudioRecorder(Thread):
             Parse device info into control argments
         """
         try :
-            self.device_sem.acquire()
             self.capture_buffer_timeout = self.args.buffer_width_s[0]
             device_info = sd.query_devices(self.args.device, 'input')
             # soundfile expects an int, sounddevice provides a float:
@@ -67,13 +66,12 @@ class AudioRecorder(Thread):
             self.args.buffersize = int(self.args.samplerate*float(self.capture_buffer_timeout))
             self.args.channels = device_info['max_input_channels']
             if self.args.file is None:
-                buffer_file =  io.BytesIO()
-                self.args.file = buffer_file
+                temp_file = io.BytesIO()
+                with wave.open(temp_file, 'wb') as temp_input:
+                    self.args.file = temp_input
             self.uptime_callback(0)
         except:
             raise SoundDeviceError
-        finally:
-            self.device_sem.release()
     
     def __clear_abort(self):
         self.sucess = True
@@ -85,56 +83,31 @@ class AudioRecorder(Thread):
     def stop_recording(self):
         self.aborted.set()           
 
-
-    def enable_recording(self, timeout, n_attempts):
-        cntr = 0
-        while cntr <n_attempts:
-            try:
-                if not self.__enable_recording(timeout):
-                    raise SoundDeviceError
-                return True
-            except SoundDeviceError:
-                print("Struggling to connect with recording device. Please check connections or input settings")
-                cntr+=1    
-            except KeyboardInterrupt:
-                break
-        return False
-
     """
-        __enable recording controls the capture thread.
+        enable recording controls the capture thread.
     """
-    def __enable_recording(self,timeout):
+    def enable_recording(self,timeout):
         try:
+            #Take Recording Semaphore
+            self.recording_sem.acquire()
             self.__clear_abort()
-            self.device_sem.acquire(timeout=timeout)
             log.info("->INPUT-DEVICE-AQUIRED")
             # Make sure the file is opened before recording anything:
             with sf.SoundFile(self.args.file, mode='x', samplerate=self.args.samplerate,channels=self.args.channels, subtype=self.args.subtype) as self.sound_file:
-                cThread = Thread(name="CAPTURE", target=self.__start_capture)
+                cThread = Thread(name="CAPTURE", target=self.__start_capture, args=timeout)
                 cThread.start()
-                #Do dummy semaphore take to init the recording loop
-                self.done_sem.acquire()
-                self.done_sem.release()
-                cThread.join()
-                self.device_sem.release()
-         
-        except (KeyboardInterrupt):
+                #Release semaphore so that the thread may start capturing recorded buffer to file
+                self.recording_sem.release()
+                
+        except Exception as e:
+            print(e)
             self.stop_recording()
             log.info("->ABORT-EXIT")
             print('\nRecording finished')
             cThread.join()
-            self.device_sem.release()
-           
-        finally:
-            if self.__is_aborted():
-                log.info("->CAPTURE-ABORTED")
-                print('\nRecording Aborted')
-                return False  
-            log.info("->CAPTURE-COMPLETE")
-            print('\nRecording finished')
-            return True
+        
 
-    def __start_capture(self) -> None:
+    def __start_capture(self,timeout) -> None:
         print("Entering Recording loop")
         log.info("-->CAPTURE-START")
         self.__clear_abort()    
@@ -142,21 +115,19 @@ class AudioRecorder(Thread):
         uptime = 0
         with sd.InputStream(samplerate=self.args.samplerate, device=self.args.device, channels=self.args.channels, callback=self.__buffer_callback):
             while True:
-                try: 
-                    uptime = time.time()-self.start_time 
+                try:
+                    self.recording_sem.acquire(timeout=timeout)
+                    uptime = time.time() - self.start_time 
                     self.uptime_callback(uptime)
-                    self.done_sem.acquire(timeout=self.capture_buffer_timeout)
                     if not self.__is_aborted():
                         log.debug("---->CAPTURE BUFFER TO FILE, UPTIME: {}".format(uptime))
                         raw_data = self.buffer.get()
                         self.sound_file.write(raw_data)
-                        self.done_sem.release()
                     else:
-                        return False
-                except SoundDeviceStop:
+                        break
+                except:
                     self.aborted.set()
-                    self.done_sem.release()
-                    
+                    raise SoundDeviceError
             
     def __buffer_callback(self, indata, frames, time, status):
         """This is called (from a separate thread) for each audio block."""
@@ -168,11 +139,11 @@ class AudioRecorder(Thread):
         cntr = 0
         while cntr < n_retries:
             try:
-                if not self.done_sem.acquire(timeout=timeout):
+                if not self.recording_sem.acquire(timeout=timeout):
                     raise SoundDeviceError
                 output = io.BytesIO()
                 output.write(self.sound_file.read())
-                self.done_sem.release()
+                self.recording_sem.release()
                 return output.getvalue()
             except SoundDeviceError:
                 cntr += 1

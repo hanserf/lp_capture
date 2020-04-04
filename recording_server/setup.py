@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='lp_server',
-    version='0.3.0',
+    version='0.3.2',
     description='Server for Capturing Audio and streaming it to a client',
     author='S3RF,hanse.fjeld@gmail.com',
     author_email='hans.erik.fjeld@embida.no',
@@ -13,7 +13,7 @@ setup(
     include_package_data=True,
     entry_points={
         'console_scripts': [
-            'lp_server=app.server:main'
+            'lp_server=server.main:main'
         ],
     }
 )

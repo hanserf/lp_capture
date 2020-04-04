@@ -4,18 +4,16 @@ import time
 import sys
 import os
 import numpy as np
-import msgpack
 import socket
 import json
 from datetime import datetime
 import subprocess
-from rsep_tcp.include.config_parser import ConfigParser
 import signal
 from contextlib import contextmanager
 import datetime
 
 log = logging.getLogger('TCP SERVER')
-HEADER_SIZE = 64
+HEADER_SIZE = 32
 
 class RandomTCPError(Exception):
    """Raised when A random tcp error occured"""
@@ -40,43 +38,17 @@ def timeout(time):
 def raise_timeout(signum, frame):
     raise TimeoutError
 
-class ResultDict:
-    def __init__(self, data_size):
-        self.result_dict = {"index":0,"epoch":0, "t_zero":1.0, "t_menisk":1.0 ,"t_ref":1.0,"v_ref":1.0,"d_menisk":1.0,"t_start":0,"raw_data":[] }
-        self.new_result = False
-        self.result_transmitted = False
-
-    def update_result(self, index, data, unix_time, t_zero, t_menisk, t_ref, v_ref, d_minisk,t_start,):
-        self.result_dict["index"] = index
-        self.result_dict["epoch"] = unix_time
-        self.result_dict["t_zero"] = t_zero
-        self.result_dict["t_menisk"] = t_menisk
-        self.result_dict["t_ref"] = t_ref
-        self.result_dict["v_ref"] = v_ref
-        self.result_dict["d_menisk"] = d_minisk
-        self.result_dict["t_start"] = t_start
-        self.result_dict["raw_data"] = data
-        self.new_result = True
-        self.result_transmitted = False
-
-    def is_new_result(self):
-        return self.new_result
-
-    def unset_new_result(self):
-        self.new_result = False
-
-    def is_result_transmitted(self):
-        return self.result_transmitted
-
-    def set_result_transmitted(self):
-        self.result_transmitted = True
-
-
-
 class TCPServer():
+    """
+        This is a simple TCP server streaming a file like object out from Audio Recorder and to a client.
+        The protocol is request reply driven. 
+        The Client must make a request within timeout or the recording will abort.
+        The TCP Server thread is notified by new_data event.  
+         
+    """
 
-    def __init__(self, host_ip, port, data_size,configA,configB, config_dir):
-        log.info("Hello world, Threaded TCP initializing")
+    def __init__(self, host_ip, port, e_new_data, e_abort):
+        log.info("Threaded TCP SERVER initializing")
         super(TCPServer,self).__init__()
         self.ip = host_ip
         self.port = port
@@ -84,30 +56,34 @@ class TCPServer():
         self.lCounter = 0
         self.has_client = False
         self.socket_error = False
-        self.config_dir = config_dir
         try:
-            self.server = self.setupServer()
+            self.server = self.__setup_server()
         except:
             log.critical("Could not create server. Exiting")
             exit(1)
-        self.connection = self.setupConnection()
+        self.connection = self.__setup_connection()
+        self.file_like_obj = self.server.makefile("w")
+        self.new_data = e_new_data
+        self.abort = e_abort
+        
         log.info("Class initialized")
-        self.payload = ResultDict(data_size)
-        self.myConfigA = configA
-        self.myConfigB = configB
         log.info("Entering Data Transfer Loop")
         self.startTime = 0
 
-    def is_client_connected(self):
+    def __is_client_connected(self):
         return self.has_client
 
+    def __is_new_data(self):
+        return self.new_data.isSet()
+    
+    
     @staticmethod
     def encode_reply(reply):
         try:
-            res = msgpack.packb(reply)
+            res = reply.encode("UTF-8")
             return res, len(res)
         except TypeError as err:
-            log.info("Error encoding msgpack: {}".format(err))
+            log.info("Error encoding UTF: {}".format(err))
         #    raise RedisPubSubError('Error encoding msgpack: {}'.format(err))
 
     def encode_result(self,result_dict):
@@ -149,7 +125,7 @@ class TCPServer():
         except TypeError as err:
             log.info("Error decoding client request: {}".format(err))
 
-    def setupServer(self):
+    def __setup_server(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         log.info("Socket created.")
         try:
@@ -162,14 +138,14 @@ class TCPServer():
 
     def set_time(self, epoch):
         '''
-        Sets the Datalogger internal time.
+        Sets the Server internal time.
          @input - unix epoch time.
         '''
         log.info('Setting time to epoch %s', str(epoch))
         if epoch != 0:
             subprocess.run('sudo /bin/date -s @' + str(epoch), shell=True, stdout=subprocess.DEVNULL)
 
-    def setupConnection(self):
+    def __setup_connection(self):
         try:
             self.server.listen(1)  # Allows one connection at a time.
             conn, address = self.server.accept()
@@ -179,68 +155,6 @@ class TCPServer():
         except:
             log.warning("Error in Setup Connection : ")
             self.reconnect_server()
-
-
-
-    def GET_CONFIG_A(self):
-        reply, reply_len = self.myConfigA.encode_config_utf8()
-        if reply is not None:
-            log.info("Sending config A {}:{}".format(reply_len,reply))
-            header = self.pad_payload(str(reply_len))
-            self.connection.sendall(header.encode('UTF-8'))
-            self.connection.sendall(reply)
-        else:
-            raise ValueError('Bad stuff Sending config B')
-
-    def GET_CONFIG_B(self):
-        reply, reply_len = self.myConfigB.encode_config_utf8()
-        if reply is not None:
-            log.info("Sending config B {}:{}".format(reply_len, reply))
-            header = self.pad_payload(str(reply_len))
-            self.connection.sendall(header.encode('UTF-8'))
-            self.connection.sendall(reply)
-        else:
-            raise ValueError('Bad stuff Sending config B')
-
-
-    def SET_CONFIG_B(self,expected_config_len):
-        config_raw = self.connection.recv(int(expected_config_len))
-        log.info("Received ConfigB raw:{}".format(config_raw))
-        config_string = config_raw.decode('UTF-8')
-        log.info("Received ConfigB:{}".format(config_string))
-        config_list = config_string.split(',')
-        log.info("Config List [" + ' , '.join(config_list) + ']')
-        for config in config_list:
-            if config == '':
-                pass
-            else:
-                key,value = config.split(':')
-                log.info("Received Config KEY = {}, Value = {}".format(key,value))
-                self.myConfigB.set_config(key,value)
-        config_path = "{}/configB.json".format(self.config_dir)
-        log.info("Config path: {}".format(config_path))
-        self.myConfigB.save_config(config_path)
-        self.GET_CONFIG_B()
-
-    def SET_CONFIG_A(self,expected_config_len):
-        config_raw = self.connection.recv(int(expected_config_len))
-        log.info("Received ConfigB raw:{}".format(config_raw))
-        config_string = config_raw.decode('UTF-8')
-        log.info("Received ConfigB:{}".format(config_string))
-        config_list = config_string.split(',')
-        for config in config_list:
-            if config =='':
-                pass
-            else:
-                key,value = config.split(':')
-                log.info("Received Config KEY = {}, Value = {}".format(key,value))
-                self.myConfigA.set_config(key,value)
-
-        config_path = "{}/configB.json".format(self.config_dir)
-        log.info("Config path: {}".format(config_path))
-        self.myConfigA.save_config(config_path)
-        self.GET_CONFIG_A()
-
 
     def REPEAT(self, dataMessage):
         try:
@@ -252,7 +166,7 @@ class TCPServer():
         except:
             return False
 
-    def GETDATA(self):
+    def GET_DATA(self):
         try:
             msg, meta = self.encode_result(self.payload.result_dict)
             # Header string is message lengths in a : separated list
@@ -276,7 +190,7 @@ class TCPServer():
             return False
 
     def GET_DATETIME(self):
-        now = datetime.now()
+        now = datetime.datetime.now()
         d1 = now.strftime("%Y-%m-%d %H:%M:%S")
         self.connection.sendall(d1.encode('UTF-8'))
 
@@ -285,14 +199,15 @@ class TCPServer():
 
     @staticmethod
     #This method removes padding used to make req/reply static of length
-    def strip_excess(msg):
+    def __strip_header_padding(msg):
         return ''.join(c for c in msg if c not in '-')
 
-    def dataTransfer(self):
+    def server_loop(self):
         # A loop that sends/receive data until told not to.
         socket_fault = False
         while True:
             try:
+                
                 # Receive the data
                 self.lCounter += 1
                 log.info("Waiting for client request # %i" %self.lCounter)
