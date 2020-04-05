@@ -1,14 +1,15 @@
 import time
 import sys
-import numpy as np
 import sys
 import os
 import io
+from datetime import datetime
 from threading import Thread, BoundedSemaphore, Event
-
+import wave 
 from queue import Queue
 import sounddevice as sd
 import soundfile as sf
+#import soundfile as sf
 import numpy  # Make sure NumPy is loaded before it is used in the callback
 assert numpy  # avoid "imported but unused" message (W0611)
 import logging
@@ -41,7 +42,7 @@ class AudioRecorder(Thread):
         super(AudioRecorder, self).__init__()
         self.args = args
         self.parser = parser
-        self.recording_sem = BoundedSemaphore()    
+        self.recording_sem = BoundedSemaphore(value=1)    
         self.buffer = Queue()
         self.sound_file = None
         self.capture_buffer_timeout = 0
@@ -60,17 +61,18 @@ class AudioRecorder(Thread):
         try :
             self.capture_buffer_timeout = self.args.buffer_width_s[0]
             device_info = sd.query_devices(self.args.device, 'input')
-            # soundfile expects an int, sounddevice provides a float:
+            print("Device Info :")
+            for key in device_info:
+                print("{}:{}".format(key,device_info[key]))
             self.args.name = device_info['name']
             self.args.samplerate = int(device_info['default_samplerate'])
             self.args.buffersize = int(self.args.samplerate*float(self.capture_buffer_timeout))
-            self.args.channels = device_info['max_input_channels']
             if self.args.file is None:
-                temp_file = io.BytesIO()
-                with wave.open(temp_file, 'wb') as temp_input:
-                    self.args.file = temp_input
-            self.uptime_callback(0)
+                self.sound_file = io.BytesIO()
+            log.debug("Device Initialized")
+                    
         except:
+            log.warning("Device failed to initialize")
             raise SoundDeviceError
     
     def __clear_abort(self):
@@ -81,24 +83,26 @@ class AudioRecorder(Thread):
         return self.aborted.isSet()
          
     def stop_recording(self):
+        log.info("Recording stopped : {}".format(datetime.now()))
         self.aborted.set()           
 
     """
         enable recording controls the capture thread.
     """
-    def enable_recording(self,timeout):
+    def enable_recording(self):
         try:
             #Take Recording Semaphore
+            self.uptime_callback(0)       
             self.recording_sem.acquire()
             self.__clear_abort()
             log.info("->INPUT-DEVICE-AQUIRED")
             # Make sure the file is opened before recording anything:
-            with sf.SoundFile(self.args.file, mode='x', samplerate=self.args.samplerate,channels=self.args.channels, subtype=self.args.subtype) as self.sound_file:
-                cThread = Thread(name="CAPTURE", target=self.__start_capture, args=timeout)
-                cThread.start()
-                #Release semaphore so that the thread may start capturing recorded buffer to file
-                self.recording_sem.release()
-                
+            cThread = Thread(name="CAPTURE", target=self.__start_capture)
+            cThread.start()
+            time.sleep(0.5)
+            #Release semaphore so that the thread may start capturing recorded buffer to file
+            self.recording_sem.release()
+            
         except Exception as e:
             print(e)
             self.stop_recording()
@@ -107,50 +111,37 @@ class AudioRecorder(Thread):
             cThread.join()
         
 
-    def __start_capture(self,timeout) -> None:
+    def __start_capture(self) -> None:
         print("Entering Recording loop")
         log.info("-->CAPTURE-START")
         self.__clear_abort()    
-        self.start_time = time.time()
-        uptime = 0
         with sd.InputStream(samplerate=self.args.samplerate, device=self.args.device, channels=self.args.channels, callback=self.__buffer_callback):
+            self.start_time = time.time()
+            uptime = 0
             while True:
-                try:
-                    self.recording_sem.acquire(timeout=timeout)
-                    uptime = time.time() - self.start_time 
-                    self.uptime_callback(uptime)
-                    if not self.__is_aborted():
-                        log.debug("---->CAPTURE BUFFER TO FILE, UPTIME: {}".format(uptime))
-                        raw_data = self.buffer.get()
-                        self.sound_file.write(raw_data)
-                    else:
-                        break
-                except:
-                    self.aborted.set()
-                    raise SoundDeviceError
-            
+                uptime = time.time() - self.start_time 
+                self.uptime_callback(uptime)
+                if not self.__is_aborted():
+                    raw_data = self.buffer.get()
+                    self.sound_file.write(raw_data)
+                    self.new_data.set()
+                    #self.recording_sem.release()
+                    
+                else:
+                    break
+                
+                
     def __buffer_callback(self, indata, frames, time, status):
         """This is called (from a separate thread) for each audio block."""
         if status:
             print(status, file=sys.stderr)
-        self.buffer.put(indata.copy())
+        self.buffer.put(indata)
     
-    def read_file_raw(self,n_retries,timeout):
-        cntr = 0
-        while cntr < n_retries:
-            try:
-                if not self.recording_sem.acquire(timeout=timeout):
-                    raise SoundDeviceError
-                output = io.BytesIO()
-                output.write(self.sound_file.read())
-                self.recording_sem.release()
-                return output.getvalue()
-            except SoundDeviceError:
-                cntr += 1
-            except KeyboardInterrupt:
-                break
-        return None
-   
+    def read_file_raw(self):
+        ret_val =self.sound_file.getvalue()
+        log.debug("READ:{}".format(len(ret_val))) 
+        return ret_val
+        
 def test():
     # Create Logger / Log Handler
     log_level = logging.DEBUG

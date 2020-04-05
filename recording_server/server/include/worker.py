@@ -6,10 +6,11 @@ import gzip
 import argparse
 import logging
 import sounddevice as sd
+import sys
 import pkg_resources
 from threading import Event
-from server.include.audio_recorder import AudioRecorder, SoundDeviceError, SoundDeviceStop
-
+#from server.include.audio_recorder import AudioRecorder, SoundDeviceError, SoundDeviceStop
+from server.include.pyaudio_recorder import pyAudioRecorder
 
 #This will put recorded buffer into the tcp server and maintain flow control
 
@@ -20,6 +21,59 @@ from server.include.audio_recorder import AudioRecorder, SoundDeviceError, Sound
 
 log = logging.getLogger('Worker')
 sw_version = pkg_resources.require("lp_server")[0].version
+
+class Worker():
+    def __init__(self,e_abort, e_new_data):
+        """
+            Variables Controlling audio Recording interface
+        """
+        self.recorder = None 
+        self.abort = e_abort
+        self.framecount = 0
+        self.rec_window = 0
+        """
+            Variables Controlling TCP File stream
+        """
+        self.new_data = e_new_data
+    
+    @staticmethod
+    def __progress(count, total, status=''):
+        bar_len = 60
+        filled_len = int(round(bar_len * count / float(total)))
+        percents = round(100.0 * count / float(total), 1)
+        bar = '=' * filled_len + '-' * (bar_len - filled_len)
+        sys.stdout.write('[%s] %s%s ...%s\r' % (bar, percents, '%', status))
+        sys.stdout.flush()
+    def __clear_abort(self):
+        self.abort.clear()
+
+    def __framecount_callback(self,cntr):
+        self.framecount = cntr
+        
+    def init_worker(self,args,parser):
+        self.rec_window = args.buffer_width_s[0]
+        self.recorder = pyAudioRecorder(args=args,
+                                        parser=parser,
+                                        e_new_data=self.new_data,
+                                        e_abort=self.abort,
+                                        framecount_callback=self.__framecount_callback)
+        self.recorder.init_sounddevice()
+    
+    def start_recording(self):
+        if self.recorder is None:
+            print("Device Not Initialized")
+            return False
+        self.recorder.enable_recording()
+        
+    def stop_recording(self):
+        self.recorder.stop_recording()
+        
+    def stop_rewind_playback(self):
+        self.recorder.stop_recording()
+        print("Fetching recorded audio, rewinding")
+        self.recorder.dump_recording_to_file()
+        print("framecount = {} ".format(self.framecount))
+        self.recorder.playback_recording(self.framecount,self.__progress)
 
     
 class ControlPrompt(Cmd):
@@ -33,15 +87,14 @@ class ControlPrompt(Cmd):
 
     def __init__(self, ):
         super(ControlPrompt, self).__init__()
-        self.recorder = None
         self.abort = Event()
         self.new_data = Event()
-        self.uptime = 0
-        self.timeout = 0
-        self.attempts = 0
+        self.worker = Worker(e_abort=self.abort,e_new_data=self.new_data)
+        
     """
         Default Functions for the shell and Argparse
     """
+        
     @staticmethod
     def __int_or_str(text):
         """Helper function for argument parsing."""
@@ -49,10 +102,7 @@ class ControlPrompt(Cmd):
             return int(text)
         except ValueError:
             return text
-
-    def __uptime_callback(self,uptime):
-        self.uptime = uptime
-        
+                    
     def help_exit(self):
         print('exit the application. Shorthand: Ctrl-D.')
 
@@ -64,17 +114,14 @@ class ControlPrompt(Cmd):
 
     do_EOF = do_exit
     help_EOF = help_exit
-
-    
-        
-            
+  
     def do_init(self,inp):
         try:
             parser = argparse.ArgumentParser(add_help=False)
             parser.add_argument(
                 '-buf', '--buffer_width_s',type=float, nargs=1,
                 help='Buffer width in seconds')
-            
+           
             parser.add_argument(
                 '-l', '--list-devices', action='store_true',
                 help='show list of audio devices and exit')
@@ -92,7 +139,7 @@ class ControlPrompt(Cmd):
             parser.add_argument(
                 '-r', '--samplerate', type=int, help='sampling rate')
             parser.add_argument(
-                '-c', '--channels', type=int, default=1, help='number of input channels')
+                '-c', '--channels', type=int, default=2, help='number of input channels')
             parser.add_argument(
                 '-t', '--subtype', type=str, help='sound file subtype (e.g. "PCM_24")')
             parser.add_argument(
@@ -102,44 +149,47 @@ class ControlPrompt(Cmd):
             
             args = parser.parse_known_args()
             args = parser.parse_args(inp.split())    
-            self.timeout = args.timeout 
-            self.attempts = args.num_retries
             if args.list_devices:         
                 print(sd.query_devices()) 
+            """
+                Setting this argument will arm worker.
+                A recording command may be issued after this.
+                Starting and stopping worker will require re-arming interface.
+            """
             if args.buffer_width_s:
-                self.recorder = AudioRecorder(args=args,parser=parser,e_new_data=new_data,e_abort=abort, uptime_callback=self.__uptime_callback)
-                self.recorder.init_sounddevice()
-            
+                self.worker.init_worker(args,parser)
 
         except SystemExit:
+            # Printing help raises System Exit!
             print("Resuming \r\n\r\n")        
 
-    def help_recording(self):
+    def help_rec(self):
         print("Start recording.")
         
-    def do_record(self, inp):
-        if self.recorder is None:
-            print("Device Not Initialized")
-            return False
-        self.recorder.enable_recording(timeout=self.timeout)
+    def do_rec(self, inp):
+        self.worker.start_recording()
         print("Recording Process started")
         
-    def help_stop_recording(self):
+    def help_stop(self):
         print("Stop the recording thread")
         
-    def do_uptime(self, inp):
-        print("-->UPTIME: {}s".format(self.uptime))
+    
+    def do_framecount(self, inp):
+        print("-->framecount: {}".format(self.worker.framecount))
+    
+    def do_abort(self, inp):
+        self.abort.set()
+        print("Recording aborted set")
+    
     
     def do_stop_recording(self, inp):
-        self.recorder.stop_recording()
+        self.worker.stop_recording()
         print("Recording Stopped")                
 
-    def do_read(self,inp):
-        print("Fetching recorded audio")
-        recorded = self.recorder.read_file_raw(self.timeout,self.attempts)
-        print("size of recorded audio : {} \n Type of recorded audio:\n{}".format(len(recorded),type(recorded)))
-
-
+    def do_stop_rewind_playback(self,inp):
+        print("Stopping recorder before playback")
+        self.worker.stop_rewind_playback()
+        
 
 if __name__ == "__main__":
     ControlPrompt().cmdloop()
