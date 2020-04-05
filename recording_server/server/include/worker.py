@@ -1,6 +1,7 @@
 from cmd import Cmd
 from pyfiglet import Figlet
 import io
+import time
 import os
 import gzip
 import argparse
@@ -8,16 +9,8 @@ import logging
 import sounddevice as sd
 import sys
 import pkg_resources
-from threading import Event
-#from server.include.audio_recorder import AudioRecorder, SoundDeviceError, SoundDeviceStop
+from threading import Event, Thread
 from server.include.pyaudio_recorder import pyAudioRecorder
-
-#This will put recorded buffer into the tcp server and maintain flow control
-
-
-    # -------------------------------------------------------------------------------------------------------------------
-    #   Create A Process for recording data
-    # -------------------------------------------------------------------------------------------------------------------
 
 log = logging.getLogger('Worker')
 sw_version = pkg_resources.require("lp_server")[0].version
@@ -34,7 +27,9 @@ class Worker():
         """
             Variables Controlling TCP File stream
         """
+        #TODO: Replace dummy with something useful
         self.new_data = e_new_data
+        self.file = io.BytesIO
     
     @staticmethod
     def __progress(count, total, status=''):
@@ -49,7 +44,10 @@ class Worker():
 
     def __framecount_callback(self,cntr):
         self.framecount = cntr
-        
+    
+    def __is_new_data(self):
+        return self.new_data.is_set()
+            
     def init_worker(self,args,parser):
         self.rec_window = args.buffer_width_s[0]
         self.recorder = pyAudioRecorder(args=args,
@@ -67,7 +65,29 @@ class Worker():
         
     def stop_recording(self):
         self.recorder.stop_recording()
-        
+    
+    #This is dummy:
+    #Replace with TCP connection:    
+    def readback_loop(self):
+        import wave
+        enable = True
+        dummy = io.BytesIO()
+        cntr = 0
+        while enable:
+            if self.__is_new_data():
+                cntr += 1
+                dummy.write(self.recorder.return_recording_as_file())
+                dummy.seek(0)
+                dummy.seek(0, os.SEEK_END)
+                size = dummy.tell()
+                print("Data Append #{}to file\n File Size = {}".format(cntr,size))
+                self.new_data.clear()
+            else:
+                if self.abort.is_set():
+                    break
+                else:
+                    time.sleep(0.5)
+
     def stop_rewind_playback(self):
         self.recorder.stop_recording()
         print("Fetching recorded audio, rewinding")
@@ -90,6 +110,7 @@ class ControlPrompt(Cmd):
         self.abort = Event()
         self.new_data = Event()
         self.worker = Worker(e_abort=self.abort,e_new_data=self.new_data)
+        self.readThread = None
         
     """
         Default Functions for the shell and Argparse
@@ -169,6 +190,14 @@ class ControlPrompt(Cmd):
     def do_rec(self, inp):
         self.worker.start_recording()
         print("Recording Process started")
+    
+    def do_rec_read(self, inp):
+        self.worker.start_recording()
+        print("Recording Process started")
+        self.readThread = Thread(name="READBACK", target=self.worker.readback_loop)
+        time.sleep(0.5)
+        print("Playback Process started")
+        self.readThread.start()
         
     def help_stop(self):
         print("Stop the recording thread")

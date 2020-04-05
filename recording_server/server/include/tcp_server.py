@@ -53,14 +53,8 @@ class TCPServer():
         self.ip = host_ip
         self.port = port
         log.info("Server ip = " + str(self.ip) + " Application Port = " + str(self.port))
-        self.lCounter = 0
         self.has_client = False
-        self.socket_error = False
-        try:
-            self.server = self.__setup_server()
-        except:
-            log.critical("Could not create server. Exiting")
-            exit(1)
+        self.server = None self.__setup_server()
         self.connection = self.__setup_connection()
         self.file_like_obj = self.server.makefile("w")
         self.new_data = e_new_data
@@ -86,29 +80,6 @@ class TCPServer():
             log.info("Error encoding UTF: {}".format(err))
         #    raise RedisPubSubError('Error encoding msgpack: {}'.format(err))
 
-    def encode_result(self,result_dict):
-        msg = []
-        header = []
-        cntr = 0
-        for entry in result_dict:
-            try:
-                chunk, size_chunk = self.encode_reply(entry)
-                msg.append(chunk)
-                header.append(size_chunk)
-                log.debug("INDEX: {} KEY: {} Appending: {} ".format(cntr,entry,size_chunk))
-                cntr += 1
-                chunk, size_chunk = self.encode_reply(result_dict[entry])
-                msg.append(chunk)
-                header.append(size_chunk)
-                cntr += 1
-                log.debug("INDEX: {} KEY: {} Appending: {} ".format(cntr, entry, size_chunk))
-                cntr += 1
-            except TypeError as err:
-                log.info("Error encoding msgpack: {}".format(err))
-
-        return msg, header
-
-        #    raise RedisPubSubError('Error encoding msgpack: {}'.format(err))
     @staticmethod
     def pad_payload(request):
         return request.ljust(HEADER_SIZE, '-')
@@ -135,16 +106,7 @@ class TCPServer():
             print(msg)
         log.info("Socket bind complete")
         return s
-
-    def set_time(self, epoch):
-        '''
-        Sets the Server internal time.
-         @input - unix epoch time.
-        '''
-        log.info('Setting time to epoch %s', str(epoch))
-        if epoch != 0:
-            subprocess.run('sudo /bin/date -s @' + str(epoch), shell=True, stdout=subprocess.DEVNULL)
-
+    
     def __setup_connection(self):
         try:
             self.server.listen(1)  # Allows one connection at a time.
@@ -156,6 +118,17 @@ class TCPServer():
             log.warning("Error in Setup Connection : ")
             self.reconnect_server()
 
+
+    def set_time(self, epoch):
+        '''
+        Sets the Server internal time.
+         @input - unix epoch time.
+        '''
+        log.info('Setting time to epoch %s', str(epoch))
+        if epoch != 0:
+            subprocess.run('sudo /bin/date -s @' + str(epoch), shell=True, stdout=subprocess.DEVNULL)
+
+    
     def REPEAT(self, dataMessage):
         try:
             reply = dataMessage

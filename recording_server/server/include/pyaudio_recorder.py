@@ -70,21 +70,23 @@ class pyAudioRecorder():
         chunk = self.args.chunk
         time_frame = self.args.samplerate / chunk
         self.start_time = time.time()
-        while True:
+        active = True
+        while active:
             frames = []
             chunks_in_capture = time_frame*self.capture_buffer_width
-            if self.__is_aborted():
-                status = "Aborted : {}".format(datetime.now())
-                print(status)
-                log.info(status)
-                break                
             for i in range(0, int(chunks_in_capture)):
+                if self.__is_aborted():
+                    status = "Aborted : {}".format(datetime.now())
+                    print(status)
+                    log.info(status)
+                    active = False
+                    break                
                 frame_cntr += 1 
                 self.framecount_callback(frame_cntr)
                 data = stream.read(chunk)
                 frames.append(data)
             self.buffer.put(frames)
-            #self.new_data.set()
+            self.new_data.set()
         stream.stop_stream()
         stream.close()
         # Terminate the PortAudio interface
@@ -122,7 +124,22 @@ class pyAudioRecorder():
         wf.writeframes(b''.join(frames))
         self.sound_file.seek(0)
         wf.close()
-        
+    
+    def return_recording_as_file(self):
+        # Save the recorded data as a WAV file
+        tmp_file = io.BytesIO()
+        wf = wave.open(tmp_file, 'wb')
+        wf.setnchannels(self.args.channels)
+        wf.setsampwidth(self.rec_proc.get_sample_size(pyaudio.paInt16))
+        wf.setframerate(self.args.samplerate)
+        frames = self.buffer.get()
+        wf.writeframes(b''.join(frames))
+        tmp_file.seek(0)
+        wf.close()
+        bytes_obj = tmp_file.getvalue() 
+        return bytes_obj
+    
+                
         
     def playback_recording(self,frames,progress_callback):
         wf = wave.open(self.sound_file, 'rb')
@@ -135,12 +152,16 @@ class pyAudioRecorder():
                         output = True)
         cntr = 0
         while cntr < frames:
+            progress_callback(cntr,frames,status='PLAYBACK')
             data = wf.readframes(self.args.chunk)
             stream.write(data)
             cntr += 1
-            progress_callback(cntr-1,frames,status='PLAYBACK')
-            
+        progress_callback(cntr,frames,status='DONE    ')
+        # Cleanup and rewind file pointer
         stream.close()
+        self.sound_file.seek(0)
+        progress_callback(0,frames,status='REWINDED')
+        wf.close()
         self.rec_proc.terminate()
         
     
