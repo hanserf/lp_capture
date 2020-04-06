@@ -11,25 +11,25 @@ from datetime import datetime
 log = logging.getLogger("PYAUDIO-RECORDER")
 
 class pyAudioRecorder():
-    def __init__(self, args, parser, e_new_data,e_abort, framecount_callback=None):
+    def __init__(self, args, parser,e_abort, buf_queue_callback=None,framecount_callback=None):
         super(pyAudioRecorder, self).__init__()
         self.args = args
         self.parser = parser
-        self.recording_sem = BoundedSemaphore(value=1)    
-        self.buffer = Queue() 
-        self.sound_file = io.BytesIO()
+        self.buffer_put = buf_queue_callback
+        self.framecount_callback = framecount_callback
         self.rec_proc = pyaudio.PyAudio()
         self.capture_buffer_width = 0
         self.aborted = e_abort
-        self.new_data = e_new_data
-        self.framecount_callback = framecount_callback
         self.start_time = 0
         self.recThread = None
         
     
     def __is_aborted(self):
         return self.aborted.isSet()
-    
+
+    def get_args_parser(self):
+        return self.args, self.parser
+
     def init_sounddevice(self):
         """
             Take the sounddevice
@@ -85,8 +85,7 @@ class pyAudioRecorder():
                 self.framecount_callback(frame_cntr)
                 data = stream.read(chunk)
                 frames.append(data)
-            self.buffer.put(frames)
-            self.new_data.set()
+            self.buffer_put(frames)
         stream.stop_stream()
         stream.close()
         # Terminate the PortAudio interface
@@ -112,37 +111,10 @@ class pyAudioRecorder():
     def stop_recording(self):
         self.aborted.set()
         self.recThread.join()
+
         
-    
-    def dump_recording_to_file(self):
-        # Save the recorded data as a WAV file
-        wf = wave.open(self.sound_file, 'wb')
-        wf.setnchannels(self.args.channels)
-        wf.setsampwidth(self.rec_proc.get_sample_size(pyaudio.paInt16))
-        wf.setframerate(self.args.samplerate)
-        frames = self.buffer.get()
-        wf.writeframes(b''.join(frames))
-        self.sound_file.seek(0)
-        wf.close()
-    
-    def return_recording_as_file(self):
-        # Save the recorded data as a WAV file
-        tmp_file = io.BytesIO()
-        wf = wave.open(tmp_file, 'wb')
-        wf.setnchannels(self.args.channels)
-        wf.setsampwidth(self.rec_proc.get_sample_size(pyaudio.paInt16))
-        wf.setframerate(self.args.samplerate)
-        frames = self.buffer.get()
-        wf.writeframes(b''.join(frames))
-        tmp_file.seek(0)
-        wf.close()
-        bytes_obj = tmp_file.getvalue() 
-        return bytes_obj
-    
-                
-        
-    def playback_recording(self,frames,progress_callback):
-        wf = wave.open(self.sound_file, 'rb')
+    def playback_recording(self,file_like,frames,progress_callback):
+        wf = wave.open(file_like, 'rb')
         # Create an interface to PortAudio
         # Open a .Stream object to write the WAV file to
         # 'output = True' indicates that the sound will be played rather than recorded
@@ -159,7 +131,7 @@ class pyAudioRecorder():
         progress_callback(cntr,frames,status='DONE    ')
         # Cleanup and rewind file pointer
         stream.close()
-        self.sound_file.seek(0)
+        file_like.seek(0)
         progress_callback(0,frames,status='REWINDED')
         wf.close()
         self.rec_proc.terminate()
