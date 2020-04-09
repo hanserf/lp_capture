@@ -19,22 +19,22 @@ log = logging.getLogger('Worker')
 sw_version = pkg_resources.require("lp_server")[0].version
 
 class Worker():
-    def __init__(self,e_abort, e_new_data):
+    def __init__(self,e_abort,e_new_request, json_dictionary_callback=None):
         """
             Variables Controlling audio Recording interface
         """
-        self.recorder = None 
+        # External Control
         self.abort = e_abort
+        self.new_request = e_new_request
+        self.file_callback = json_dictionary_callback
+        self.use_compression = False
+        # Thread Local 
+        self.recorder = None 
         self.framecount = 0
         self.rec_window = 0
         self.buffer = Queue()
-        """
-            Variables Controlling TCP File stream
-        """
-        #TODO: Replace dummy with something useful
-        self.new_data = e_new_data
-        self.file = io.BytesIO
-    
+        self.new_data = Event()
+        
     @staticmethod
     def __progress(count, total, status=''):
         bar_len = 60
@@ -49,8 +49,11 @@ class Worker():
         # writing zip file
         with gzip.GzipFile(fileobj=filename, mode= 'wb') as f:
             f.write(bytes_like)
+            filename.seek(0, os.SEEK_END)
+            size = filename.tell()
+            filename.seek(0)
         compressed_binary = filename.getvalue()
-        return compressed_binary
+        return compressed_binary,size
 
     @staticmethod
     def gunzip_bytes_obj(bytes_like):
@@ -67,20 +70,19 @@ class Worker():
     def __framecount_callback(self,cntr):
         self.framecount = cntr
     
-    def __is_new_data(self):
-        return self.new_data.is_set()
+    def __is_new_request(self):
+        return self.new_request.is_set()
 
-    def __buffer_queue_callback(self,frame):
-        self.buffer.put(frame)
+    def __buffer_queue_callback(self,start_time,data_frame):
+        res_tuple = (start_time,self.framecount,data_frame)
+        self.buffer.put(res_tuple)
         self.new_data.set()
-        self.framecount +=1
 
     def init_worker(self,args,parser):
         self.rec_window = args.buffer_width_s[0]
         self.recorder = pyAudioRecorder(args=args,
                                         parser=parser,
                                         e_abort=self.abort,
-                                        framecount_callback=self.__framecount_callback,
                                         buf_queue_callback=self.__buffer_queue_callback
                                         )
         self.recorder.init_sounddevice()
@@ -94,36 +96,38 @@ class Worker():
     def stop_recording(self):
         self.recorder.stop_recording()
     
+    def set_use_compression(self, boolean):
+        self.use_compression = boolean
+    
     #This is dummy:
     #Replace with TCP connection:    
-    def readback_loop(self):
-        import wave
+    def file_recording_loop(self):
         enable = True
-        dummy = io.BytesIO()
         cntr = 0
         while enable:
-            if self.__is_new_data():
-                cntr += 1
-                dummy.write(self.recorder.return_recording_as_file())
-                dummy.seek(0)
-                dummy.seek(0, os.SEEK_END)
-                size = dummy.tell()
-                print("Data Append #{}to file\n File Size = {}".format(cntr,size))
+            if self.__is_new_request():
+                cntr += 1        
+                (start_time,framecount,frames) = self.buffer.get()
+                raw_data,size = self.frames_to_file_like(frames)
+                if self.use_compression:
+                    compressed,size = self.gzip_compress(frames)
+                    raw_data = compressed                  
+                log.debug("Data Append #{}to file\n Collected size = {}, File Size = {}".format(cntr, size, size))
+                self.file_callback(start_time,framecount,self.use_compression,size,raw_data)
                 self.new_data.clear()
             else:
                 if self.abort.is_set():
                     break
-                else:
-                    time.sleep(0.5)
+                time.sleep(0.5)
 
     def stop_rewind_playback(self):
         self.recorder.stop_recording()
         print("Fetching recorded audio, rewinding")
-        self.recorder.dump_recording_to_file()
+        file_like = self.recording_as_file_like()
         print("framecount = {} ".format(self.framecount))
-        self.recorder.playback_recording(self.framecount,self.__progress)
+        self.recorder.playback_recording(file_like=file_like,frames=self.framecount, progress_callback=self.__progress)
 
-    def recording_as_file_like(self):
+    def frames_to_file_like(self,data_frames):
         # Save the recorded data as a WAV file
         args,parser = self.recorder.get_args_parser()
         tmp_file = io.BytesIO()
@@ -131,8 +135,8 @@ class Worker():
         wf.setnchannels(args.channels)
         wf.setsampwidth(args.sample_format)
         wf.setframerate(args.samplerate)
-        frames = self.buffer.get()
-        wf.writeframes(b''.join(frames))
+        
+        wf.writeframes(b''.join(data_frames))
         tmp_file.seek(0, os.SEEK_END)
         size = tmp_file.tell()
         tmp_file.seek(0)
@@ -140,11 +144,6 @@ class Worker():
         file_like = tmp_file.getvalue()
         return  file_like, size
 
-    def recording_as_file_like_compressed(self):
-        # Save the recorded data as a compressed WAV file
-        file_like, size = self.recording_as_file_like()
-        compressed = self.gzip_compress(file_like)
-        return compressed
 
 
 def test():

@@ -11,12 +11,11 @@ from datetime import datetime
 log = logging.getLogger("PYAUDIO-RECORDER")
 
 class pyAudioRecorder():
-    def __init__(self, args, parser,e_abort, buf_queue_callback=None,framecount_callback=None):
+    def __init__(self, args, parser,e_abort, buf_queue_callback=None):
         super(pyAudioRecorder, self).__init__()
         self.args = args
         self.parser = parser
         self.buffer_put = buf_queue_callback
-        self.framecount_callback = framecount_callback
         self.rec_proc = pyaudio.PyAudio()
         self.capture_buffer_width = 0
         self.aborted = e_abort
@@ -82,10 +81,9 @@ class pyAudioRecorder():
                     active = False
                     break                
                 frame_cntr += 1 
-                self.framecount_callback(frame_cntr)
                 data = stream.read(chunk)
                 frames.append(data)
-            self.buffer_put(frames)
+            self.buffer_put(self.start_time,frame_cntr,frames)
         stream.stop_stream()
         stream.close()
         # Terminate the PortAudio interface
@@ -97,7 +95,6 @@ class pyAudioRecorder():
     """
     def enable_recording(self):
         try:
-            self.framecount_callback(0)       
             log.info("->INPUT-DEVICE-AQUIRED")
             self.recThread = Thread(name="CAPTURE", target=self.__start_capture)
             self.recThread.start()
