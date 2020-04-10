@@ -5,9 +5,7 @@ import time
 import os
 import gzip
 import wave
-import argparse
 import logging
-import sounddevice as sd
 import pickle
 import sys
 import pkg_resources
@@ -19,13 +17,12 @@ log = logging.getLogger('Worker')
 sw_version = pkg_resources.require("lp_server")[0].version
 
 class Worker():
-    def __init__(self,e_abort,e_new_request, json_dictionary_callback=None):
+    def __init__(self,e_abort, json_dictionary_callback=None):
         """
             Variables Controlling audio Recording interface
         """
         # External Control
         self.abort = e_abort
-        self.new_request = e_new_request
         self.file_callback = json_dictionary_callback
         self.use_compression = False
         # Thread Local 
@@ -70,8 +67,8 @@ class Worker():
     def __framecount_callback(self,cntr):
         self.framecount = cntr
     
-    def __is_new_request(self):
-        return self.new_request.is_set()
+    def __is_new_data(self):
+        return self.new_data.is_set()
 
     def __buffer_queue_callback(self,start_time,data_frame):
         res_tuple = (start_time,self.framecount,data_frame)
@@ -99,13 +96,16 @@ class Worker():
     def set_use_compression(self, boolean):
         self.use_compression = boolean
     
-    #This is dummy:
-    #Replace with TCP connection:    
+    
     def file_recording_loop(self):
+        """
+            This loop will put recorded frames into a wave format file object existing entirely in RAM
+            When a new buffer of X frames is ready, they will be converted to Wave and called back to the conrol module.
+        """
         enable = True
         cntr = 0
         while enable:
-            if self.__is_new_request():
+            if self.__is_new_data():
                 cntr += 1        
                 (start_time,framecount,frames) = self.buffer.get()
                 raw_data,size = self.frames_to_file_like(frames)
@@ -135,7 +135,6 @@ class Worker():
         wf.setnchannels(args.channels)
         wf.setsampwidth(args.sample_format)
         wf.setframerate(args.samplerate)
-        
         wf.writeframes(b''.join(data_frames))
         tmp_file.seek(0, os.SEEK_END)
         size = tmp_file.tell()
@@ -269,8 +268,5 @@ def test():
         def do_stop_rewind_playback(self,inp):
             print("Stopping recorder before playback")
             self.worker.stop_rewind_playback()
-
-    ControlPrompt().cmdloop()
-
-if __name__ == "__main__":
+new_data
     test()

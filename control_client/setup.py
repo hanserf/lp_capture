@@ -9,7 +9,7 @@ setup(
     author_email='hanse.fjeld@gmail.com',
     packages=find_packages(),
     setup_requires=['wheel'],
-    install_requires=['scipy', 'numpy', 'sounddevice','pysoundfile' ],
+    install_requires=['sounddevice','pyaudio','pyFiglet' ],
     include_package_data=True,
     entry_points={
         'console_scripts': [
